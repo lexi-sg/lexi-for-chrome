@@ -34,9 +34,10 @@ assert not missing, f"manifest references missing files: {missing}"
 print(f"manifest v{m['manifest_version']} '{m['name']}' {m['version']}: all {len([r for r in refs if r])} referenced paths present")
 EOF
 
+# CWS requires manifest.json at the ZIP root — zip the staged CONTENTS.
 ZIP="$OUT_DIR/lexi-for-chrome-$VERSION.zip"
 rm -f "$ZIP"
-(cd "$(dirname "$STAGE")" && zip -qr "$ZIP" "$(basename "$STAGE")" -x '*.DS_Store')
+(cd "$STAGE" && zip -qr "$ZIP" . -x '*.DS_Store')
 rm -rf "$(dirname "$STAGE")"
 echo "Built $ZIP ($(du -h "$ZIP" | cut -f1))"
 unzip -l "$ZIP" | tail -3
