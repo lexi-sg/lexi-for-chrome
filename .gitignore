@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+__pycache__/
+.DS_Store
+*.log
+
+# Internal working documents (not part of the public project)
+SPEC.json
+research/

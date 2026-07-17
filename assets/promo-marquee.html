@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lexi — Chrome Web Store marquee promo tile (1400x560)</title>
+<style>
+  :root {
+    --lexi-indigo: #4F46E5;
+    --lexi-indigo-deep: #3730C7;
+    --lexi-bg: #F7F8FB;
+    --lexi-ink: #0B1220;
+    --lexi-muted: #4B5468;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 1400px;
+    height: 560px;
+    overflow: hidden;
+    background: var(--lexi-bg);
+  }
+  .tile {
+    position: relative;
+    width: 1400px;
+    height: 560px;
+    background:
+      radial-gradient(60% 90% at 86% 12%, rgba(79,70,229,0.11) 0%, rgba(79,70,229,0) 60%),
+      linear-gradient(180deg, #FDFDFE 0%, #F7F8FB 100%);
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: var(--lexi-ink);
+  }
+  .motif {
+    position: absolute;
+    right: 40px;
+    bottom: -70px;
+    width: 560px;
+    height: 560px;
+    opacity: 0.13;
+  }
+  .content {
+    position: relative;
+    z-index: 2;
+    padding: 76px 96px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .kicker {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--lexi-indigo-deep);
+    margin: 0 0 22px 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .brand img {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: block;
+    box-shadow: 0 6px 18px rgba(79,70,229,0.22);
+  }
+  .brand span {
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 38px;
+    letter-spacing: 0.005em;
+    color: var(--lexi-ink);
+  }
+  h1 {
+    margin: 40px 0 0 0;
+    font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 68px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    color: var(--lexi-ink);
+    max-width: 760px;
+  }
+  .rule {
+    margin: 32px 0 26px 0;
+    width: 72px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--lexi-indigo);
+  }
+  p.value {
+    margin: 0;
+    max-width: 620px;
+    font-size: 22px;
+    line-height: 1.5;
+    color: var(--lexi-muted);
+    font-weight: 500;
+  }
+  .spacer { flex: 1; }
+  .pills {
+    display: flex;
+    gap: 12px;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 9px 18px;
+    border-radius: 999px;
+    background: #FFFFFF;
+    border: 1px solid rgba(11,18,32,0.09);
+    box-shadow: 0 2px 6px rgba(11,18,32,0.05);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--lexi-ink);
+  }
+  .pill .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--lexi-indigo);
+    margin-right: 9px;
+    flex: none;
+  }
+</style>
+</head>
+<body>
+  <div class="tile">
+    <svg class="motif" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <g stroke="#4F46E5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="100" y1="35" x2="100" y2="170" />
+        <line x1="70" y1="170" x2="130" y2="170" />
+        <circle cx="100" cy="30" r="5" fill="#4F46E5" stroke="none" />
+        <line x1="30" y1="45" x2="170" y2="45" />
+        <line x1="30" y1="45" x2="12" y2="102" />
+        <line x1="30" y1="45" x2="48" y2="102" />
+        <path d="M 12 102 Q 30 120 48 102" />
+        <line x1="170" y1="45" x2="152" y2="102" />
+        <line x1="170" y1="45" x2="188" y2="102" />
+        <path d="M 152 102 Q 170 120 188 102" />
+      </g>
+    </svg>
+    <div class="content">
+      <p class="kicker">Chrome Extension</p>
+      <div class="brand">
+        <img src="data:image/png;base64,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" alt="" />
+        <span>Lexi</span>
+      </div>
+      <h1>AI Legal Assistant for the Web</h1>
+      <div class="rule"></div>
+      <p class="value">See any page, understand any contract &mdash; grounded in what you're reading, right in your browser side panel.</p>
+      <div class="spacer"></div>
+      <div class="pills">
+        <span class="pill"><span class="dot"></span>Bring your own Claude key</span>
+        <span class="pill"><span class="dot"></span>No account &middot; No server</span>
+        <span class="pill"><span class="dot"></span>Not legal advice</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

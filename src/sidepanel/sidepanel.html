@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lexi — AI Legal Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <div id="lexi-app">
+
+    <!-- ==================== HEADER ==================== -->
+    <header id="lexi-header">
+      <div id="lexi-brand">
+        <span id="lexi-logo">Lexi</span>
+        <span id="lexi-beta-pill">beta</span>
+      </div>
+
+      <select id="model-picker" aria-label="Model"></select>
+
+      <button id="settings-btn" type="button" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M19.14 12.94a7.14 7.14 0 0 0 .05-.94 7.14 7.14 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.61-.22l-2.39.96a7.3 7.3 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.14.56-1.63.94l-2.39-.96a.5.5 0 0 0-.61.22L2.71 8.84a.5.5 0 0 0 .12.64l2.03 1.58a7.14 7.14 0 0 0-.05.94c0 .32.02.63.05.94L2.83 14.5a.5.5 0 0 0-.12.64l1.92 3.32c.14.24.42.32.61.22l2.39-.96c.49.38 1.04.7 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.59-.24 1.14-.56 1.63-.94l2.39.96c.24.1.5.02.61-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z"/>
+        </svg>
+      </button>
+    </header>
+
+    <!-- ================= CONTEXT CHIP ================= -->
+    <div id="context-chip">
+      <img id="context-favicon" alt="" width="14" height="14" />
+      <span id="context-title">No page detected</span>
+      <button id="context-toggle" type="button" aria-pressed="true" title="Toggle reading this page">
+        <span id="context-toggle-label">Reading this page</span>
+      </button>
+    </div>
+
+    <!-- ============= NO-KEY / ONBOARDING BANNER ============= -->
+    <div id="key-banner" hidden>
+      <span>Add your Anthropic API key to start.</span>
+      <button id="key-banner-btn" type="button">Set up Lexi</button>
+    </div>
+
+    <!-- ================== MESSAGES LOG ================== -->
+    <main id="messages" role="log" aria-live="polite" aria-label="Conversation"></main>
+
+    <!-- Confirmation card template — cloned into #messages when a risky
+         agent action needs explicit human approval. -->
+    <template id="confirm-card-template">
+      <div class="lexi-confirm-card" role="alertdialog" aria-label="Confirm action">
+        <p class="lexi-confirm-heading">Lexi wants to:</p>
+        <p id="confirm-desc" class="lexi-confirm-desc"></p>
+        <label class="lexi-confirm-remember">
+          <input type="checkbox" id="confirm-remember" />
+          <span>Always allow this action on this site</span>
+        </label>
+        <div class="lexi-confirm-actions">
+          <button id="confirm-deny" type="button" class="lexi-btn lexi-btn-muted">Deny</button>
+          <button id="confirm-approve" type="button" class="lexi-btn lexi-btn-accent">Approve</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ================== ACTING BAR ================== -->
+    <div id="acting-bar" hidden>
+      <span id="acting-dot" aria-hidden="true"></span>
+      <span id="acting-intent">Lexi is acting</span>
+      <button id="stop-btn" type="button">Stop</button>
+    </div>
+
+    <!-- =============== AGENT ENABLE PROMPT =============== -->
+    <div id="agent-enable-row" hidden>
+      <span>Agent actions are off on this site.</span>
+      <button id="agent-enable-btn" type="button">Enable agent actions on this site</button>
+    </div>
+
+    <!-- ================ QUICK ACTIONS ROW ================ -->
+    <div id="quick-actions-wrap">
+      <div id="quick-actions" role="toolbar" aria-label="Quick actions"></div>
+      <button id="quick-actions-more" type="button" aria-haspopup="true" aria-expanded="false">+more</button>
+      <div id="secondary-actions-menu" hidden></div>
+    </div>
+
+    <!-- ================== COST HINT ==================== -->
+    <div id="cost-hint" hidden></div>
+
+    <!-- =================== COMPOSER ===================== -->
+    <form id="composer" autocomplete="off">
+      <div id="mode-toggle" role="tablist" aria-label="Chat or Agent mode">
+        <button type="button" id="mode-chat-btn" role="tab" aria-selected="true" data-mode="chat">Chat</button>
+        <button type="button" id="mode-agent-btn" role="tab" aria-selected="false" data-mode="agent">Agent</button>
+      </div>
+
+      <div id="composer-input-row">
+        <textarea
+          id="prompt-input"
+          rows="1"
+          placeholder="Ask about this page, or type / for quick actions…"
+          aria-label="Message Lexi"
+        ></textarea>
+        <button id="send-btn" type="submit" aria-label="Send">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="currentColor" d="M3.4 20.6 22 12 3.4 3.4 3.4 10.2 16 12 3.4 13.8Z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="slash-menu" hidden></div>
+    </form>
+
+    <!-- =================== FOOTER ======================= -->
+    <footer id="disclaimer">Built by Lexi — getlexi.io · Not legal advice.</footer>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

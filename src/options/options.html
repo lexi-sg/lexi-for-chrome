@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lexi Settings</title>
+<!-- Reuse the shared design-token stylesheet from the side panel (per SPEC:
+     "Loads options.js (module) + reuses sidepanel.css tokens (link both)").
+     The page-specific layout below only relies on the --lexi-* custom
+     properties documented in src/config.js CSS_TOKENS, and also defines a
+     matching fallback set so this page still renders correctly even if
+     sidepanel.css hasn't loaded (e.g. loaded standalone during dev). -->
+<link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+<style>
+  /* ---------------------------------------------------------------------
+     Fallback design tokens (must match sidepanel.css / SPEC design_notes
+     exactly). If sidepanel.css also defines these, values are identical so
+     load order never causes a visual mismatch.
+  --------------------------------------------------------------------- */
+  :root {
+    --lexi-bg: #ffffff;
+    --lexi-surface: #f7f7fb;
+    --lexi-text: #1a1a2e;
+    --lexi-muted: #6b6b85;
+    --lexi-border: #e4e4ef;
+    --lexi-accent: #5b5bd6;
+    --lexi-accent-strong: #4a3aff;
+    --lexi-accent-tint: #eeeefb;
+    --lexi-risk: #e5484d;
+    --lexi-warn: #f5a623;
+    --lexi-ok: #30a46c;
+    --lexi-r: 10px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --lexi-bg: #14141c;
+      --lexi-surface: #1e1e29;
+      --lexi-text: #ececf5;
+      --lexi-muted: #9a9ab4;
+      --lexi-border: #2c2c3b;
+      --lexi-accent: #8b8bf0;
+      --lexi-accent-strong: #a5a5f7;
+      --lexi-accent-tint: #21213a;
+      --lexi-risk: #e5484d;
+      --lexi-warn: #f5a623;
+      --lexi-ok: #30a46c;
+    }
+  }
+
+  /* A viewer's explicit theme toggle always wins over the OS preference. */
+  :root[data-theme='light'] {
+    --lexi-bg: #ffffff;
+    --lexi-surface: #f7f7fb;
+    --lexi-text: #1a1a2e;
+    --lexi-muted: #6b6b85;
+    --lexi-border: #e4e4ef;
+    --lexi-accent: #5b5bd6;
+    --lexi-accent-strong: #4a3aff;
+    --lexi-accent-tint: #eeeefb;
+  }
+  :root[data-theme='dark'] {
+    --lexi-bg: #14141c;
+    --lexi-surface: #1e1e29;
+    --lexi-text: #ececf5;
+    --lexi-muted: #9a9ab4;
+    --lexi-border: #2c2c3b;
+    --lexi-accent: #8b8bf0;
+    --lexi-accent-strong: #a5a5f7;
+    --lexi-accent-tint: #21213a;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background: var(--lexi-bg);
+    color: var(--lexi-text);
+    font-family: -apple-system, 'Segoe UI', Roboto, Inter, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 560px;
+    padding: 32px 20px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .topbar {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .wordmark {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--lexi-accent);
+  }
+
+  .beta-pill {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--lexi-accent);
+    background: var(--lexi-accent-tint);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  .tagline {
+    margin: 0;
+    color: var(--lexi-muted);
+    font-size: 13px;
+  }
+
+  .card-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .card {
+    background: var(--lexi-surface);
+    border: 1px solid var(--lexi-border);
+    border-radius: calc(var(--lexi-r) + 2px);
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+
+  .card h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .card h3 {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 2px;
+  }
+
+  .muted {
+    color: var(--lexi-muted);
+  }
+
+  .small {
+    font-size: 12px;
+  }
+
+  .warn-text {
+    color: var(--lexi-warn);
+  }
+
+  a {
+    color: var(--lexi-accent);
+  }
+
+  #onboarding.is-hidden,
+  #settings.is-hidden {
+    display: none;
+  }
+
+  /* Author-level display rules outrank the UA's `[hidden] { display: none }`
+     (author styles beat UA styles regardless of specificity), so JS-toggled
+     `hidden` attributes need this explicit guard to actually hide things. */
+  [hidden] {
+    display: none !important;
+  }
+
+  .key-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  #api-key-input {
+    flex: 1;
+    min-width: 0;
+    padding: 9px 10px;
+    border-radius: var(--lexi-r);
+    border: 1px solid var(--lexi-border);
+    background: var(--lexi-bg);
+    color: var(--lexi-text);
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  #api-key-input:focus,
+  select:focus,
+  button:focus-visible,
+  input[type='checkbox']:focus-visible,
+  input[type='radio']:focus-visible {
+    outline: 2px solid var(--lexi-accent);
+    outline-offset: 1px;
+  }
+
+  label {
+    font-weight: 500;
+    font-size: 13px;
+  }
+
+  .btn {
+    border: none;
+    border-radius: var(--lexi-r);
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+  }
+
+  .btn:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+    transform: none;
+  }
+
+  .btn-accent {
+    background: var(--lexi-accent);
+    color: #ffffff;
+  }
+
+  .btn-accent:hover:not(:disabled) {
+    background: var(--lexi-accent-strong);
+  }
+
+  .btn-muted {
+    background: transparent;
+    color: var(--lexi-muted);
+    border: 1px solid var(--lexi-border);
+  }
+
+  .btn-muted:hover:not(:disabled) {
+    color: var(--lexi-text);
+    border-color: var(--lexi-muted);
+  }
+
+  .btn-small {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+
+  .key-status {
+    margin: 0;
+    min-height: 16px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .key-status[data-state='ok'] {
+    color: var(--lexi-ok);
+  }
+
+  .key-status[data-state='error'] {
+    color: var(--lexi-risk);
+  }
+
+  .key-status[data-state='pending'] {
+    color: var(--lexi-muted);
+  }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .field-row select {
+    flex: 0 0 auto;
+    min-width: 220px;
+    padding: 7px 9px;
+    border-radius: var(--lexi-r);
+    border: 1px solid var(--lexi-border);
+    background: var(--lexi-bg);
+    color: var(--lexi-text);
+    font-size: 13px;
+  }
+
+  .field-group {
+    border: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .field-group legend {
+    font-weight: 600;
+    font-size: 13px;
+    padding: 0;
+    margin-bottom: 2px;
+  }
+
+  .radio-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--lexi-r);
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .radio-row:hover {
+    background: var(--lexi-accent-tint);
+  }
+
+  .radio-row input[type='radio'] {
+    margin-top: 3px;
+    accent-color: var(--lexi-accent);
+  }
+
+  .radio-row > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .radio-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--lexi-border);
+    border: none;
+    margin: 2px 0;
+  }
+
+  #nano-tier-row {
+    align-items: center;
+  }
+
+  #nano-tier-row .field-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  input[type='checkbox'] {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--lexi-accent);
+  }
+
+  .site-grants-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .site-grants-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--lexi-r);
+    background: var(--lexi-bg);
+    border: 1px solid var(--lexi-border);
+    font-size: 13px;
+  }
+
+  .site-origin {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    word-break: break-all;
+  }
+
+  .disclosure-card p {
+    margin: 0 0 4px;
+    font-size: 13px;
+  }
+
+  .disclosure-card {
+    border-color: var(--lexi-accent);
+  }
+
+  .key-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--lexi-bg);
+    border: 1px solid var(--lexi-border);
+    border-radius: var(--lexi-r);
+  }
+
+  .page-footer {
+    text-align: center;
+    color: var(--lexi-muted);
+    font-size: 12px;
+    padding-top: 8px;
+  }
+
+  @media (max-width: 420px) {
+    .key-row {
+      flex-direction: column;
+    }
+    .field-row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .field-row select {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="topbar">
+    <div class="brand">
+      <span class="wordmark">Lexi</span>
+      <span class="beta-pill">beta</span>
+    </div>
+    <p class="tagline">Settings &amp; onboarding</p>
+  </header>
+
+  <main class="card-col">
+    <!-- ==================================================================
+         ONBOARDING (shown first-run, i.e. whenever no API key is stored
+         yet). Once a valid key is saved this collapses and a compact
+         "key saved" summary row appears at the top of #settings instead,
+         with a "Change key" action that re-opens this section.
+         ================================================================== -->
+    <section id="onboarding" class="card">
+      <h1>Add your Anthropic API key</h1>
+      <p class="muted">
+        Lexi is bring-your-own-key: there is no Lexi account and no Lexi
+        server. Your key is stored only on this device and is used to call
+        Anthropic's API directly.
+      </p>
+
+      <label for="api-key-input">Anthropic API key</label>
+      <div class="key-row">
+        <input
+          id="api-key-input"
+          type="password"
+          name="lexi-api-key"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="sk-ant-..."
+        />
+        <button id="validate-btn" type="button" class="btn btn-accent">
+          Validate &amp; save
+        </button>
+      </div>
+      <p id="key-status" class="key-status" role="status" aria-live="polite"></p>
+
+      <p class="muted small">
+        Don't have a key?
+        <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
+          >Get one at console.anthropic.com</a
+        >.
+      </p>
+      <p class="muted small">
+        Your key stays on this device and is sent only to Anthropic, only
+        when you ask Lexi a question.
+      </p>
+    </section>
+
+    <!-- ==================================================================
+         SETTINGS (shown once a key is saved; the onboarding card above
+         collapses and this key-summary row takes its place).
+         ================================================================== -->
+    <section id="settings" class="card">
+      <div id="key-summary-row" class="key-summary-row" hidden>
+        <span class="muted small">Anthropic API key: <strong id="key-summary-text">not set</strong></span>
+        <button id="change-key-btn" type="button" class="btn btn-muted btn-small">Change key</button>
+      </div>
+
+      <hr class="divider" />
+
+      <h2>Default model</h2>
+      <div class="field-row">
+        <label for="default-model">Used for chat, quick actions, and agent mode</label>
+        <select id="default-model"></select>
+      </div>
+
+      <hr class="divider" />
+
+      <fieldset class="field-group" id="approval-mode-group">
+        <legend>Agent approval mode</legend>
+
+        <label class="radio-row">
+          <input type="radio" name="approval-mode" id="approval-manual" value="manual" checked />
+          <div>
+            <span class="radio-title">Manual Approve (default)</span>
+            <span class="muted small"
+              >Every mutating action shows a confirmation card before it
+              runs.</span
+            >
+          </div>
+        </label>
+
+        <label class="radio-row">
+          <input type="radio" name="approval-mode" id="approval-auto" value="auto" />
+          <div>
+            <span class="radio-title">Auto Approve</span>
+            <span class="muted small"
+              >Low-risk actions run automatically. Submitting a form,
+              navigating to a new domain, paying, sending a message,
+              uploading, downloading, and deleting always pause for your
+              approval.</span
+            >
+          </div>
+        </label>
+
+        <label class="radio-row">
+          <input type="radio" name="approval-mode" id="approval-trusted" value="trusted" />
+          <div>
+            <span class="radio-title">Trusted</span>
+            <span class="muted small warn-text"
+              >Power-user mode &mdash; every non-blocked action runs without
+              asking. Only enable this if you fully trust the task you're
+              giving Lexi; risky actions (submit, pay, navigate, send,
+              upload, download, delete) still always pause.</span
+            >
+          </div>
+        </label>
+      </fieldset>
+
+      <hr class="divider" />
+
+      <div class="field-row" id="nano-tier-row">
+        <div>
+          <label for="nano-tier-toggle">Basic on-device model (Gemini Nano)</label>
+          <p class="muted small" id="nano-tier-note">Checking availability&hellip;</p>
+        </div>
+        <div class="field-row-actions">
+          <button id="nano-download-btn" type="button" class="btn btn-muted btn-small" hidden>
+            Download on-device model
+          </button>
+          <input type="checkbox" id="nano-tier-toggle" disabled />
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="field-group" id="site-grants-group">
+        <h3>Agent-enabled sites</h3>
+        <p class="muted small">
+          Agent mode is off everywhere by default. Sites you've explicitly
+          enabled agent actions on appear here.
+        </p>
+        <ul id="site-grants-list" class="site-grants-list"></ul>
+        <p id="site-grants-empty" class="muted small">
+          No sites have agent actions enabled yet.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         DISCLOSURES (always visible — CWS Limited Use style data
+         disclosure, prominent per spec).
+         ================================================================== -->
+    <section id="disclosures" class="card disclosure-card">
+      <h2>What data is sent, and to whom</h2>
+      <p>
+        When you ask a question, the page's text &mdash; and, only if you
+        use <strong>Screenshot &amp; ask</strong>, an image of the page
+        &mdash; are sent to Anthropic's API using your own key. No Lexi or
+        third-party server is involved; Lexi has no backend and no account
+        system.
+      </p>
+      <p>
+        Agent Mode (letting Lexi click and type on your behalf) is off by
+        default and must be enabled per-site. When enabled, Chrome shows
+        its own "this extension is debugging this browser" banner for as
+        long as it's active, and Lexi always asks before anything risky
+        &mdash; submitting a form, navigating to a new site, paying,
+        sending a message, uploading, downloading, or deleting.
+      </p>
+      <p class="muted small">
+        Lexi is not a law firm and does not provide legal advice. Its
+        output is informational only.
+      </p>
+    </section>
+  </main>
+
+  <footer class="page-footer">Built by Lexi &mdash; getlexi.io &middot; Not legal advice.</footer>
+</div>
+
+<script type="module" src="options.js"></script>
+</body>
+</html>

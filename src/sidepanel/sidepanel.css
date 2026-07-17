@@ -1,0 +1,952 @@
+/* src/sidepanel/sidepanel.css
+ *
+ * Complete visual system for the Lexi side panel (and reused, via <link>, by
+ * options.html). Defines the --lexi-* design-token contract documented in
+ * src/config.js CSS_TOKENS. Light is the default; dark responds to both the
+ * OS-level `prefers-color-scheme: dark` media query AND an explicit
+ * `data-theme` attribute on :root so an in-app theme toggle always wins over
+ * the OS setting in either direction.
+ *
+ * No external fonts, no external assets — CSP-safe (`extension_pages`
+ * script-src/style-src 'self').
+ */
+
+/* ============================== RESET ================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+textarea,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ============================ DESIGN TOKENS ============================ */
+
+:root {
+  /* Light theme (default) */
+  --lexi-bg: #ffffff;
+  --lexi-surface: #f7f7fb;
+  --lexi-text: #1a1a2e;
+  --lexi-muted: #6b6b85;
+  --lexi-border: #e4e4ef;
+  --lexi-accent: #5b5bd6;
+  --lexi-accent-strong: #4a3aff;
+  --lexi-accent-tint: #eeeefb;
+  --lexi-risk: #e5484d;
+  --lexi-warn: #f5a623;
+  --lexi-ok: #30a46c;
+  --lexi-r: 10px;
+
+  --lexi-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
+  --lexi-shadow-md: 0 4px 16px rgba(20, 20, 30, 0.1);
+  --lexi-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter,
+    Helvetica, Arial, sans-serif;
+  --lexi-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --lexi-bg: #14141c;
+    --lexi-surface: #1e1e29;
+    --lexi-text: #ececf5;
+    --lexi-muted: #9a9ab4;
+    --lexi-border: #2c2c3b;
+    --lexi-accent: #8b8bf0;
+    --lexi-accent-strong: #a5a5f7;
+    --lexi-accent-tint: #21213a;
+    --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+}
+
+/* Explicit override wins over the OS setting either way. */
+:root[data-theme="light"] {
+  --lexi-bg: #ffffff;
+  --lexi-surface: #f7f7fb;
+  --lexi-text: #1a1a2e;
+  --lexi-muted: #6b6b85;
+  --lexi-border: #e4e4ef;
+  --lexi-accent: #5b5bd6;
+  --lexi-accent-strong: #4a3aff;
+  --lexi-accent-tint: #eeeefb;
+  --lexi-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
+  --lexi-shadow-md: 0 4px 16px rgba(20, 20, 30, 0.1);
+}
+
+:root[data-theme="dark"] {
+  --lexi-bg: #14141c;
+  --lexi-surface: #1e1e29;
+  --lexi-text: #ececf5;
+  --lexi-muted: #9a9ab4;
+  --lexi-border: #2c2c3b;
+  --lexi-accent: #8b8bf0;
+  --lexi-accent-strong: #a5a5f7;
+  --lexi-accent-tint: #21213a;
+  --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ============================== BASE =================================== */
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  font-family: var(--lexi-font);
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--lexi-bg);
+  color: var(--lexi-text);
+  min-width: 320px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+#lexi-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============================== HEADER ================================= */
+
+#lexi-header {
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--lexi-border);
+  background: var(--lexi-bg);
+}
+
+#lexi-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+#lexi-logo {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--lexi-accent);
+  letter-spacing: -0.01em;
+}
+
+#lexi-beta-pill {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--lexi-muted);
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+#model-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--lexi-text);
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
+#settings-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lexi-muted);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+#settings-btn:hover {
+  background: var(--lexi-surface);
+  color: var(--lexi-text);
+}
+
+/* ============================ CONTEXT CHIP ============================= */
+
+#context-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: var(--lexi-r);
+  font-size: 12px;
+  color: var(--lexi-muted);
+}
+
+#context-favicon {
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+#context-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lexi-text);
+}
+
+#context-toggle {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--lexi-accent);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background-color 120ms ease;
+}
+
+#context-toggle:hover {
+  background: var(--lexi-accent-tint);
+}
+
+#context-toggle[aria-pressed="false"] {
+  color: var(--lexi-muted);
+  text-decoration: line-through;
+}
+
+/* ============================ KEY BANNER ================================ */
+
+#key-banner {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  background: var(--lexi-accent-tint);
+  border: 1px solid var(--lexi-accent);
+  border-radius: var(--lexi-r);
+  font-size: 12.5px;
+}
+
+#key-banner-btn {
+  flex: 0 0 auto;
+  background: var(--lexi-accent);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  transition: background-color 120ms ease;
+}
+
+#key-banner-btn:hover {
+  background: var(--lexi-accent-strong);
+}
+
+/* ============================== MESSAGES ================================ */
+
+#messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scroll-behavior: smooth;
+}
+
+.lexi-msg {
+  max-width: 92%;
+  animation: lexi-fade-in 160ms ease;
+}
+
+.lexi-msg-user {
+  align-self: flex-end;
+  background: var(--lexi-accent-tint);
+  color: var(--lexi-text);
+  border-radius: var(--lexi-r);
+  padding: 8px 12px;
+}
+
+.lexi-msg-assistant {
+  align-self: stretch;
+  max-width: 100%;
+  padding: 2px 2px;
+}
+
+.lexi-msg-assistant p {
+  margin: 0 0 8px;
+}
+
+.lexi-msg-assistant p:last-child {
+  margin-bottom: 0;
+}
+
+.lexi-msg-assistant h1,
+.lexi-msg-assistant h2,
+.lexi-msg-assistant h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+
+.lexi-msg-assistant ul,
+.lexi-msg-assistant ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.lexi-msg-assistant code {
+  font-family: var(--lexi-mono);
+  font-size: 12.5px;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.lexi-msg-assistant pre {
+  margin: 0 0 8px;
+  padding: 10px;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.lexi-msg-assistant pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.lexi-msg-assistant a {
+  color: var(--lexi-accent);
+}
+
+.lexi-table-scroll {
+  overflow-x: auto;
+  margin: 0 0 8px;
+  border: 1px solid var(--lexi-border);
+  border-radius: 8px;
+}
+
+.lexi-table-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.lexi-table-scroll th,
+.lexi-table-scroll td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--lexi-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.lexi-table-scroll tr:last-child td {
+  border-bottom: none;
+}
+
+.lexi-table-scroll thead {
+  background: var(--lexi-surface);
+}
+
+/* Risk-flag list items */
+.lexi-risk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px 8px 10px;
+  margin: 0 0 6px;
+  border-left: 3px solid var(--lexi-border);
+  background: var(--lexi-surface);
+  border-radius: 0 8px 8px 0;
+}
+
+.lexi-risk-item.lexi-risk-high {
+  border-left-color: var(--lexi-risk);
+}
+
+.lexi-risk-item.lexi-risk-med {
+  border-left-color: var(--lexi-warn);
+}
+
+.lexi-risk-item.lexi-risk-low {
+  border-left-color: var(--lexi-ok);
+}
+
+.lexi-risk-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 5px;
+  background: var(--lexi-muted);
+}
+
+.lexi-risk-high .lexi-risk-dot {
+  background: var(--lexi-risk);
+}
+
+.lexi-risk-med .lexi-risk-dot {
+  background: var(--lexi-warn);
+}
+
+.lexi-risk-low .lexi-risk-dot {
+  background: var(--lexi-ok);
+}
+
+.lexi-risk-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Streaming caret */
+.lexi-caret {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  margin-left: 2px;
+  background: var(--lexi-accent);
+  vertical-align: text-bottom;
+  animation: lexi-blink 1s step-start infinite;
+}
+
+.lexi-disclaimer-line {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--lexi-border);
+  font-size: 11.5px;
+  color: var(--lexi-muted);
+}
+
+.lexi-injection-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lexi-warn);
+  margin-bottom: 6px;
+}
+
+/* Preview image bubble (Screenshot & ask) */
+.lexi-msg-image {
+  border-radius: var(--lexi-r);
+  border: 1px solid var(--lexi-border);
+  max-height: 220px;
+  object-fit: cover;
+}
+
+/* ============================ CONFIRM CARD ============================== */
+
+.lexi-confirm-card {
+  align-self: stretch;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: var(--lexi-r);
+  box-shadow: var(--lexi-shadow-md);
+  padding: 12px 14px;
+  animation: lexi-fade-in 160ms ease;
+}
+
+.lexi-confirm-heading {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lexi-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.lexi-confirm-desc {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  color: var(--lexi-text);
+}
+
+.lexi-confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--lexi-muted);
+  margin-bottom: 10px;
+}
+
+.lexi-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.lexi-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.lexi-btn:active {
+  transform: translateY(1px);
+}
+
+.lexi-btn-accent {
+  background: var(--lexi-accent);
+  color: #fff;
+}
+
+.lexi-btn-accent:hover {
+  background: var(--lexi-accent-strong);
+}
+
+.lexi-btn-muted {
+  background: var(--lexi-border);
+  color: var(--lexi-text);
+}
+
+.lexi-btn-muted:hover {
+  filter: brightness(0.95);
+}
+
+/* ============================== ACTING BAR ============================== */
+
+#acting-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 12px;
+  border-radius: var(--lexi-r);
+  background: var(--lexi-risk);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+#acting-bar.lexi-acting-done {
+  background: var(--lexi-ok);
+}
+
+#acting-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: lexi-pulse 1.2s ease-in-out infinite;
+}
+
+#acting-intent {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stop-btn {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#stop-btn:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+/* ========================= AGENT ENABLE ROW ============================= */
+
+#agent-enable-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 12px;
+  background: var(--lexi-surface);
+  border: 1px dashed var(--lexi-border);
+  border-radius: var(--lexi-r);
+  font-size: 12px;
+  color: var(--lexi-muted);
+}
+
+#agent-enable-btn {
+  flex: 0 0 auto;
+  background: var(--lexi-accent);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+#agent-enable-btn:hover {
+  background: var(--lexi-accent-strong);
+}
+
+/* ============================ QUICK ACTIONS ============================= */
+
+#quick-actions-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 8px;
+  position: relative;
+}
+
+#quick-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+#quick-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.lexi-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  color: var(--lexi-text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.lexi-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--lexi-accent);
+  background: var(--lexi-accent-tint);
+}
+
+#quick-actions-more {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--lexi-border);
+  color: var(--lexi-muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+#secondary-actions-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--lexi-bg);
+  border: 1px solid var(--lexi-border);
+  border-radius: var(--lexi-r);
+  box-shadow: var(--lexi-shadow-md);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  z-index: 20;
+}
+
+#secondary-actions-menu button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--lexi-text);
+}
+
+#secondary-actions-menu button:hover {
+  background: var(--lexi-surface);
+}
+
+/* =============================== COST HINT =============================== */
+
+#cost-hint {
+  flex: 0 0 auto;
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--lexi-accent-tint);
+  color: var(--lexi-accent-strong);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ================================ COMPOSER ================================ */
+
+#composer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--lexi-border);
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+  background: var(--lexi-bg);
+}
+
+#mode-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: 999px;
+  padding: 2px;
+}
+
+#mode-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--lexi-muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+#mode-toggle button[aria-selected="true"] {
+  background: var(--lexi-accent);
+  color: #fff;
+}
+
+#composer-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-border);
+  border-radius: var(--lexi-r);
+  padding: 6px 6px 6px 12px;
+  transition: border-color 120ms ease;
+}
+
+#composer-input-row:focus-within {
+  border-color: var(--lexi-accent);
+}
+
+#prompt-input {
+  flex: 1 1 auto;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--lexi-text);
+  max-height: 120px;
+  min-height: 20px;
+  line-height: 1.4;
+  padding: 6px 0;
+}
+
+#prompt-input::placeholder {
+  color: var(--lexi-muted);
+}
+
+#send-btn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--lexi-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+#send-btn:hover {
+  background: var(--lexi-accent-strong);
+}
+
+#send-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#slash-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;
+  right: 12px;
+  margin-bottom: 6px;
+  background: var(--lexi-bg);
+  border: 1px solid var(--lexi-border);
+  border-radius: var(--lexi-r);
+  box-shadow: var(--lexi-shadow-md);
+  padding: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.lexi-slash-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+
+.lexi-slash-item:hover,
+.lexi-slash-item.lexi-slash-active {
+  background: var(--lexi-accent-tint);
+}
+
+.lexi-slash-item .lexi-slash-cmd {
+  font-family: var(--lexi-mono);
+  font-size: 12px;
+  color: var(--lexi-accent);
+}
+
+.lexi-slash-item .lexi-slash-label {
+  font-size: 11.5px;
+  color: var(--lexi-muted);
+}
+
+/* ================================= FOOTER ================================= */
+
+#disclaimer {
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--lexi-muted);
+  padding: 6px 12px 10px;
+}
+
+/* ================================ EMPTY STATE ============================== */
+
+#messages:empty::before {
+  content: "Ask a question about the page you're on, or try a quick action below.";
+  display: block;
+  margin: auto;
+  text-align: center;
+  color: var(--lexi-muted);
+  font-size: 13px;
+  padding: 32px 24px;
+}
+
+/* ================================ ANIMATIONS ================================ */
+
+@keyframes lexi-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes lexi-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes lexi-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.4);
+  }
+}
+
+/* ================================ NARROW WIDTH =============================== */
+
+@media (max-width: 340px) {
+  #lexi-beta-pill {
+    display: none;
+  }
+  .lexi-chip {
+    padding: 6px 9px;
+  }
+}
+
+/* ============================== [hidden] GUARD =============================== */
+/* Any author-level `display: flex/grid/...` rule on an element outranks the UA
+   stylesheet's `[hidden] { display: none }` (author styles always beat UA
+   styles regardless of specificity), which would leave JS-toggled `hidden`
+   attributes (#key-banner, #acting-bar, #agent-enable-row,
+   #secondary-actions-menu, #cost-hint, #slash-menu, …) with no visible
+   effect. This rule restores the expected semantics for every element. */
+[hidden] {
+  display: none !important;
+}
