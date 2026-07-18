@@ -30,6 +30,22 @@ open(path, 'w').write(new)
 print(f"staged build channel: {channel}")
 EOF
 
+# For the prod store build, declare ONLY the production Lexi backend host.
+# The source manifest lists staging + api.anthropic.com for dev/e2e, but the
+# shipped login-only product only ever contacts api.getlexi.io, so a prod ZIP
+# must not request the others (unused host permissions get rejected).
+if [ "$CHANNEL" = "prod" ]; then
+python3 - "$STAGE/manifest.json" <<'EOF'
+import json, sys
+path = sys.argv[1]
+m = json.load(open(path))
+m['host_permissions'] = ['https://api.getlexi.io/*']
+json.dump(m, open(path, 'w'), indent=2, ensure_ascii=False)
+open(path, 'a').write('\n')
+print('staged host_permissions: https://api.getlexi.io/*')
+EOF
+fi
+
 # Sanity: manifest must be valid JSON and every referenced file must exist.
 python3 - "$STAGE" <<'EOF'
 import json, os, sys

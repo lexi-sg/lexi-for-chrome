@@ -75,6 +75,11 @@ const manifestPath = path.join(STAGE, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 delete manifest.optional_permissions;
 delete manifest.optional_host_permissions;
+// Prod store build talks only to the production Lexi backend; drop the
+// dev/e2e staging + Anthropic hosts so no unused host permission is requested.
+if ((process.env.CHANNEL || 'prod') === 'prod') {
+  manifest.host_permissions = ['https://api.getlexi.io/*'];
+}
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 // ---------------------------------------------------------------------------
