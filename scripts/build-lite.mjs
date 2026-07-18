@@ -77,8 +77,11 @@ delete manifest.optional_permissions;
 delete manifest.optional_host_permissions;
 // Prod store build talks only to the production Lexi backend; drop the
 // dev/e2e staging + Anthropic hosts so no unused host permission is requested.
+// Also drop the baked "key": the Chrome Web Store assigns the published item's
+// ID from its own key, and a mismatched manifest key is rejected on upload.
 if ((process.env.CHANNEL || 'prod') === 'prod') {
   manifest.host_permissions = ['https://api.getlexi.io/*'];
+  delete manifest.key;
 }
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 

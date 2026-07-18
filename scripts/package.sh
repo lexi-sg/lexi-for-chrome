@@ -40,9 +40,13 @@ import json, sys
 path = sys.argv[1]
 m = json.load(open(path))
 m['host_permissions'] = ['https://api.getlexi.io/*']
+# The Chrome Web Store assigns the published item's ID from its own key; a
+# baked-in "key" that doesn't match the item is rejected on upload. Drop it for
+# the store build (kept in source only for stable-ID local unpacked dev).
+m.pop('key', None)
 json.dump(m, open(path, 'w'), indent=2, ensure_ascii=False)
 open(path, 'a').write('\n')
-print('staged host_permissions: https://api.getlexi.io/*')
+print('staged host_permissions: https://api.getlexi.io/*; key removed for store')
 EOF
 fi
 
