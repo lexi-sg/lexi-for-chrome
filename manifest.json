@@ -3,7 +3,7 @@
   "name": "Lexi — AI Legal Assistant for the Web",
   "short_name": "Lexi",
   "version": "1.0.0",
-  "description": "AI legal co-pilot in your browser side panel. Explain clauses, flag risky terms, summarize judgments — grounded in the page you're on. Bring your own Claude API key. Not legal advice.",
+  "description": "AI legal co-pilot in your side panel. Explain clauses, flag risky terms, summarize judgments — on the page you're on. Your own key.",
   "minimum_chrome_version": "120",
   "background": {
     "service_worker": "src/background/service-worker.js",
@@ -28,10 +28,23 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["sidePanel", "activeTab", "scripting", "storage", "alarms"],
-  "host_permissions": ["https://api.anthropic.com/*"],
-  "optional_permissions": ["debugger", "tabs"],
-  "optional_host_permissions": ["<all_urls>"],
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*"
+  ],
+  "optional_permissions": [
+    "debugger",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.anthropic.com"
   }
