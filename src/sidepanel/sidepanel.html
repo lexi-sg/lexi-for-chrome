@@ -12,11 +12,15 @@
     <!-- ==================== HEADER ==================== -->
     <header id="lexi-header">
       <div id="lexi-brand">
+        <img id="lexi-mark" src="../../icons/icon48.png" width="22" height="22" alt="" aria-hidden="true" />
         <span id="lexi-logo">Lexi</span>
-        <span id="lexi-beta-pill">beta</span>
       </div>
 
-      <select id="model-picker" aria-label="Model"></select>
+      <!-- Model/tier selection is server-owned in account (product-chat) mode —
+           the client sends no model on /llm/chat. This control is retained
+           hidden only for the UI-less BYOK agent-mode escape hatch (the
+           hermetic e2e seam), never surfaced to signed-in lawyers. -->
+      <select id="model-picker" aria-label="Model" hidden></select>
 
       <button id="settings-btn" type="button" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -56,7 +60,10 @@
     <!-- ============= FIRST-RUN SIGN-IN SCREEN ============= -->
     <div id="signin-screen" hidden>
       <div id="signin-card">
-        <span id="signin-logo">Lexi</span>
+        <span id="signin-logo">
+          <img id="signin-mark" src="../../icons/icon128.png" width="40" height="40" alt="" aria-hidden="true" />
+          <span id="signin-wordmark">Lexi</span>
+        </span>
         <h2 id="signin-title">The Lexi you use at work, on every page</h2>
         <p id="signin-sub">Sign in with your Lexi account to read, analyze, and act on the page you’re on.</p>
         <button id="signin-btn" type="button">Sign in with Lexi</button>

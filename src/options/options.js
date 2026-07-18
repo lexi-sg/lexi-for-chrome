@@ -42,6 +42,7 @@ const keySummaryRow = $('key-summary-row');
 const keySummaryText = $('key-summary-text');
 const changeKeyBtn = $('change-key-btn');
 const modelSelect = $('default-model');
+const defaultModelSection = $('default-model-section');
 const approvalRadios = () =>
   Array.from(document.querySelectorAll('input[name="approval-mode"]'));
 const nanoToggle = $('nano-tier-toggle');
@@ -249,6 +250,9 @@ function renderAccount(session) {
   const signedIn = !!(session && session.ok);
   if (accountSignedOut) accountSignedOut.hidden = signedIn;
   if (accountSignedIn) accountSignedIn.hidden = !signedIn;
+  // Raw model picker is a BYOK-only affordance — the server owns model/tier
+  // selection for account users, so surface it only when signed out.
+  if (defaultModelSection) defaultModelSection.hidden = signedIn;
   if (!signedIn) return;
 
   const account = session.account || {};

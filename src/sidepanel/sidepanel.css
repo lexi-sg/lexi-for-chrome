@@ -167,28 +167,24 @@ body {
 
 #lexi-brand {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+#lexi-mark {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
   flex: 0 0 auto;
 }
 
 #lexi-logo {
   font-weight: 700;
   font-size: 16px;
-  color: var(--lexi-accent);
+  color: var(--lexi-text);
   letter-spacing: -0.01em;
-}
-
-#lexi-beta-pill {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--lexi-muted);
-  background: var(--lexi-surface);
-  border: 1px solid var(--lexi-border);
-  border-radius: 999px;
-  padding: 1px 6px;
 }
 
 #model-picker {
@@ -207,6 +203,9 @@ body {
 
 #settings-btn {
   flex: 0 0 auto;
+  /* Far-right: the model picker is hidden in account mode, so the gear
+     anchors the right edge of the header on its own. */
+  margin-left: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1034,9 +1033,23 @@ body {
 }
 
 #signin-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+#signin-mark {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+#signin-wordmark {
   font-weight: 800;
   font-size: 22px;
-  color: var(--lexi-accent);
+  color: var(--lexi-text);
 }
 
 #signin-title {
@@ -1219,7 +1232,8 @@ body {
 /* ================================ NARROW WIDTH =============================== */
 
 @media (max-width: 340px) {
-  #lexi-beta-pill {
+  #lexi-logo {
+    /* Below the narrowest panel width, keep just the mark to save room. */
     display: none;
   }
   .lexi-chip {

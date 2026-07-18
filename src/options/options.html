@@ -113,25 +113,21 @@
 
   .brand {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .brand-mark {
+    display: block;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
   }
 
   .wordmark {
     font-size: 20px;
     font-weight: 600;
-    color: var(--lexi-accent);
-  }
-
-  .beta-pill {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--lexi-accent);
-    background: var(--lexi-accent-tint);
-    border-radius: 999px;
-    padding: 2px 8px;
+    color: var(--lexi-text);
   }
 
   .tagline {
@@ -459,8 +455,8 @@
 <div class="page">
   <header class="topbar">
     <div class="brand">
+      <img class="brand-mark" src="../../icons/icon128.png" width="28" height="28" alt="" aria-hidden="true" />
       <span class="wordmark">Lexi</span>
-      <span class="beta-pill">beta</span>
     </div>
     <p class="tagline">Settings &amp; onboarding</p>
   </header>
@@ -556,13 +552,19 @@
 
       <hr class="divider" />
 
-      <h2>Default model</h2>
-      <div class="field-row">
-        <label for="default-model">Used for chat, quick actions, and agent mode</label>
-        <select id="default-model"></select>
-      </div>
+      <!-- Raw model selection is a BYOK-only concept. In account (signed-in)
+           mode the Lexi server owns model/tier selection, so this whole
+           section is hidden by renderAccount() — lawyers never pick raw
+           Anthropic model names. -->
+      <div id="default-model-section" hidden>
+        <h2>Default model</h2>
+        <div class="field-row">
+          <label for="default-model">Used for chat, quick actions, and agent mode</label>
+          <select id="default-model"></select>
+        </div>
 
-      <hr class="divider" />
+        <hr class="divider" />
+      </div>
 
       <fieldset class="field-group" id="approval-mode-group">
         <legend>Agent approval mode</legend>
