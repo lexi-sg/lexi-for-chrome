@@ -75,12 +75,18 @@ const manifestPath = path.join(STAGE, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 delete manifest.optional_permissions;
 delete manifest.optional_host_permissions;
-// Prod store build talks only to the production Lexi backend; drop the
-// dev/e2e staging + Anthropic hosts so no unused host permission is requested.
+// Prod store build declares BOTH Lexi backend hosts: the runtime channel
+// switch means one published ZIP may talk to EITHER api.getlexi.io (prod) or
+// staging-api.getlexi.io (the CWS-review login window), flipped server-side, so
+// both are needed (api.getlexi.io is also the config control plane).
+// api.anthropic.com is dropped (the agent proxy goes through the Lexi backend).
 // Also drop the baked "key": the Chrome Web Store assigns the published item's
 // ID from its own key, and a mismatched manifest key is rejected on upload.
 if ((process.env.CHANNEL || 'prod') === 'prod') {
-  manifest.host_permissions = ['https://api.getlexi.io/*'];
+  manifest.host_permissions = [
+    'https://api.getlexi.io/*',
+    'https://staging-api.getlexi.io/*',
+  ];
   delete manifest.key;
 }
 fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

@@ -38,8 +38,7 @@
   ],
   "host_permissions": [
     "https://api.getlexi.io/*",
-    "https://staging-api.getlexi.io/*",
-    "https://api.anthropic.com/*"
+    "https://staging-api.getlexi.io/*"
   ],
   "optional_permissions": [
     "debugger",

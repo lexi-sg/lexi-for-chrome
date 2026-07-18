@@ -18,9 +18,13 @@ import {
   LIMITS,
   STORAGE_KEYS,
   AGENT_MODE_AVAILABLE,
-  LEXI_API_BASE,
-  CONNECT_ORIGINS,
+  LEXI_CHANNEL_CONFIG,
 } from '../config.js';
+import {
+  getActiveConfig,
+  refreshChannelConfig,
+  bakedDefaultConfig,
+} from '../background/channel-config.js';
 import { streamMessage, imageBlock } from '../agent/anthropic-client.js';
 import { TOOLS, SEE_ONLY_TOOLS } from '../agent/tools.js';
 import { createAgentRun } from '../agent/agent-loop.js';
@@ -107,6 +111,15 @@ let settings = {
 let nanoAvailable = false;
 /** True once a session-expiry re-auth is being shown; blocks sending. */
 let sessionExpired = false;
+
+/**
+ * Active backend channel config ({channel, api_base, connect_url,
+ * connect_origin}), resolved cache-first via getActiveConfig(). Seeded with the
+ * baked prod default so the panel works on the very first launch, before the
+ * first runtime-config refresh completes; boot() replaces it with the cached/
+ * refreshed value. Every backend call reads its base from here at call time.
+ */
+let channelConfig = bakedDefaultConfig();
 
 /** The tab Lexi is currently reading (may be a Playwright ?testTabId fixture). */
 let currentTab = null;
@@ -1249,7 +1262,7 @@ async function runProductChat(userMessage, opts = {}) {
   try {
     const pageContext = includePageContext ? await capturePageContext() : null;
     await streamProductChat({
-      baseUrl: LEXI_API_BASE,
+      baseUrl: channelConfig.api_base,
       token: settings.extensionToken,
       conversationId: productConversationId,
       userMessage,
@@ -1279,7 +1292,7 @@ async function runProductChat(userMessage, opts = {}) {
 
 /** Best-effort Open-in-Lexi deep link for a streamed artifact card. */
 function artifactDeepLink() {
-  const appOrigin = (CONNECT_ORIGINS && CONNECT_ORIGINS[0]) || '';
+  const appOrigin = channelConfig.connect_origin || '';
   if (!appOrigin || !productConversationId) return null;
   return `${appOrigin}/chat/${productConversationId}`;
 }
@@ -1292,7 +1305,7 @@ function artifactDeepLink() {
  * Anthropic in the BYOK escape hatch). */
 function agentAuthDescriptor() {
   if (settings.authMode === 'account' && settings.extensionToken) {
-    return { mode: 'account', token: settings.extensionToken, baseUrl: LEXI_API_BASE };
+    return { mode: 'account', token: settings.extensionToken, baseUrl: channelConfig.api_base };
   }
   return { mode: 'byok', apiKey: settings.apiKey };
 }
@@ -1565,6 +1578,17 @@ async function boot() {
   renderQuickActions();
   setMode('chat');
 
+  // Resolve the active backend channel cache-first (never blocks on the
+  // network): use the cached value now, and kick a refresh so a server-side
+  // channel flip is picked up for the next turn. Failures fall back to the
+  // baked prod default already seeded into channelConfig.
+  channelConfig = await getActiveConfig();
+  refreshChannelConfig()
+    .then((cfg) => {
+      if (cfg) channelConfig = cfg;
+    })
+    .catch(() => {});
+
   const [loadedSettings, resolvedTab, nano] = await Promise.all([
     requestSettings().catch(() => ({})),
     resolveTargetTab(),
@@ -1585,6 +1609,25 @@ async function boot() {
   if (currentTab && currentTab.id !== undefined) {
     port?.postMessage({ type: MSG.PORT_HELLO, tabId: currentTab.id });
   }
+}
+
+// Keep this already-open panel's cached channel config LIVE across a server-
+// side channel flip. The background SW's periodic refresh (or any trusted
+// context's refresh) writes the new config to chrome.storage.local, which
+// fires this listener — without it, a panel left open across a flip would keep
+// POSTing chat/agent traffic (with the user's real bearer token) to the OLD
+// backend until manually closed. Re-resolve via getActiveConfig() so the value
+// is re-validated against the baked allowlist (never trust raw storage) before
+// runProductChat/agentAuthDescriptor/artifactDeepLink read it on the next turn.
+if (chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[LEXI_CHANNEL_CONFIG]) return;
+    getActiveConfig()
+      .then((cfg) => {
+        if (cfg) channelConfig = cfg;
+      })
+      .catch(() => {});
+  });
 }
 
 boot();

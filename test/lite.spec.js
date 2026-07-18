@@ -139,11 +139,15 @@ test.describe('lite build — static checks (no browser, no API key required)', 
   test('lite manifest declares NO optional permissions', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(LITE_STAGE, 'manifest.json'), 'utf8'));
     // Chat-only surface stays: sidePanel/activeTab/scripting/storage/alarms +
-    // the Anthropic host. The debugger/tabs/<all_urls> optionals are gone.
+    // BOTH Lexi backend hosts (the runtime channel switch). The
+    // debugger/tabs/<all_urls> optionals are gone.
     expect(manifest.optional_permissions).toBeUndefined();
     expect(manifest.optional_host_permissions).toBeUndefined();
     expect(manifest.permissions).toEqual(expect.arrayContaining(['sidePanel', 'activeTab', 'scripting', 'storage']));
-    expect(manifest.host_permissions).toEqual(expect.arrayContaining(['https://api.anthropic.com/*']));
+    expect(manifest.host_permissions).toEqual(
+      expect.arrayContaining(['https://api.getlexi.io/*', 'https://staging-api.getlexi.io/*']),
+    );
+    expect(manifest.host_permissions).not.toContain('https://api.anthropic.com/*');
     // Name/description are unchanged from the full build.
     expect(manifest.name).toContain('Lexi');
   });

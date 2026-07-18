@@ -7,7 +7,10 @@
 // the full suite's test count. The hermetic account-mode + product-chat suite
 // (mocked backend, no ANTHROPIC_API_KEY/staging creds needed) lives in
 // test/account-mode.spec.js and is opt-in behind LEXI_ACCOUNT_MODE for the
-// same reason.
+// same reason. The runtime channel-switch suite (server-flippable
+// prod/staging resolution via GET /api/extension/runtime-config) lives in
+// test/channel-config.spec.js and is opt-in behind LEXI_CHANNEL for the same
+// reason.
 //
 // Discovery is switched by testMatch rather than testDir so all spec files can
 // live side-by-side in test/ without one leaking into another's run.
@@ -15,12 +18,15 @@
 
 const isLite = !!process.env.LEXI_LITE;
 const isAccountMode = !!process.env.LEXI_ACCOUNT_MODE;
+const isChannel = !!process.env.LEXI_CHANNEL;
 
 module.exports = {
   testDir: './test',
-  testMatch: isAccountMode
-    ? /account-mode\.spec\.js$/
-    : isLite
-      ? /lite\.spec\.js$/
-      : /e2e\.spec\.js$/,
+  testMatch: isChannel
+    ? /channel-config\.spec\.js$/
+    : isAccountMode
+      ? /account-mode\.spec\.js$/
+      : isLite
+        ? /lite\.spec\.js$/
+        : /e2e\.spec\.js$/,
 };

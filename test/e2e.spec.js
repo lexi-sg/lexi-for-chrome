@@ -256,7 +256,15 @@ test.describe('static checks (no browser, no API key required)', () => {
     expect(manifest.background?.type).toBe('module');
     expect(manifest.side_panel?.default_path).toBe('src/sidepanel/sidepanel.html');
     expect(manifest.permissions).toEqual(expect.arrayContaining(['sidePanel', 'activeTab', 'scripting', 'storage']));
-    expect(manifest.host_permissions).toEqual(expect.arrayContaining(['https://api.anthropic.com/*']));
+    // Both Lexi backend hosts are declared — the runtime channel switch means
+    // one build may talk to EITHER prod or staging, flipped server-side.
+    // api.getlexi.io is also the config control plane (RUNTIME_CONFIG_URL).
+    expect(manifest.host_permissions).toEqual(
+      expect.arrayContaining(['https://api.getlexi.io/*', 'https://staging-api.getlexi.io/*']),
+    );
+    // api.anthropic.com is no longer a host permission — the agent proxy goes
+    // through the Lexi backend, not the browser straight to Anthropic.
+    expect(manifest.host_permissions).not.toContain('https://api.anthropic.com/*');
     // No static content_scripts block — all injection must be programmatic
     // under activeTab (spec.manifest requirement).
     expect(manifest.content_scripts).toBeUndefined();

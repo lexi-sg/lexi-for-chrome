@@ -20,13 +20,12 @@ import {
   STORAGE_KEYS,
   RISKY_CLASSES,
   AGENT_MODE_AVAILABLE,
-  LEXI_API_BASE,
-  CONNECT_URL,
   CONNECT_ORIGINS,
   CONNECT_NONCE_KEY,
   SESSION_PATH,
   REVOKE_PATH,
 } from '../config.js';
+import { refreshChannelConfig, getActiveConfig, ensureActiveConfig } from './channel-config.js';
 import * as permissionManager from './permission-manager.js';
 import {
   attach,
@@ -242,7 +241,15 @@ async function startSignIn() {
   if (chrome.storage.session) {
     await chrome.storage.session.set({ [CONNECT_NONCE_KEY]: nonce });
   }
-  await chrome.tabs.create({ url: `${CONNECT_URL}?state=${encodeURIComponent(nonce)}` });
+  // Resolve the connect page from the ACTIVE channel (prod app.getlexi.io or
+  // staging.getlexi.io), so a channel flip sends new sign-ins to the matching
+  // connect page without a new build. ensureActiveConfig (not the cache-first
+  // getActiveConfig) so a brand-new install whose first background refresh has
+  // not landed yet resolves the channel NOW rather than defaulting to prod —
+  // otherwise a CWS reviewer on a staging build who clicks Sign in within the
+  // first few seconds would be sent to the prod connect page.
+  const { connect_url: connectUrl } = await ensureActiveConfig();
+  await chrome.tabs.create({ url: `${connectUrl}?state=${encodeURIComponent(nonce)}` });
   return null; // no reply — the panel waits for the AUTH_CHANGED broadcast
 }
 
@@ -256,7 +263,8 @@ async function signOut() {
   const token = stored[STORAGE_KEYS.EXTENSION_TOKEN];
   if (token) {
     try {
-      await fetch(`${LEXI_API_BASE}${REVOKE_PATH}`, {
+      const { api_base: apiBase } = await getActiveConfig();
+      await fetch(`${apiBase}${REVOKE_PATH}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: '{}',
@@ -288,7 +296,8 @@ async function getSession() {
   const token = stored[STORAGE_KEYS.EXTENSION_TOKEN];
   if (!token) return { type: MSG.SESSION, ok: false, signedOut: true, error: 'Not signed in.' };
   try {
-    const res = await fetch(`${LEXI_API_BASE}${SESSION_PATH}`, {
+    const { api_base: apiBase } = await getActiveConfig();
+    const res = await fetch(`${apiBase}${SESSION_PATH}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.status === 401) {
@@ -733,6 +742,10 @@ if (!registerDebuggerDetachListener() && chrome.permissions && chrome.permission
 // ---------------------------------------------------------------------------
 
 const KEEPALIVE_ALARM = 'keepalive';
+// Low-frequency alarm that re-polls the channel control plane so a server-side
+// LEXI_EXTENSION_CHANNEL flip reaches an already-running SW within ~30 min
+// without a browser restart (the control plane itself caches for 5 min).
+const CHANNEL_REFRESH_ALARM = 'channel-refresh';
 
 function setup() {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
@@ -748,15 +761,24 @@ function setup() {
     chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => {});
   }
   chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+  chrome.alarms.create(CHANNEL_REFRESH_ALARM, { periodInMinutes: 30 });
+  // Resolve the active channel up-front on install/startup (cache-first: a
+  // failure just leaves the previous cache / baked prod default in place).
+  refreshChannelConfig().catch(() => {});
 }
 
 chrome.runtime.onInstalled.addListener(setup);
 chrome.runtime.onStartup.addListener(setup);
 
-// No-op keepalive tick — its only job is to give Chrome a recurring event so
-// it does not tear the SW down mid multi-step agent run. Nothing to do here;
-// state lives in chrome.storage / the ports Map (rebuilt from live Ports).
+// Alarm tick. KEEPALIVE is a no-op whose only job is to give Chrome a recurring
+// event so it does not tear the SW down mid multi-step agent run (state lives
+// in chrome.storage / the ports Map). CHANNEL_REFRESH re-polls the control
+// plane so a channel flip propagates to a long-lived SW.
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CHANNEL_REFRESH_ALARM) {
+    refreshChannelConfig().catch(() => {});
+    return;
+  }
   if (alarm.name !== KEEPALIVE_ALARM) return;
 });
 

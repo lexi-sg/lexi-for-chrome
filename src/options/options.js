@@ -13,8 +13,9 @@ import {
   DEFAULT_MODEL,
   STORAGE_KEYS,
   AGENT_MODE_AVAILABLE,
-  CONNECT_ORIGINS,
+  LEXI_CHANNEL_CONFIG,
 } from '../config.js';
+import { getActiveConfig } from '../background/channel-config.js';
 import { nanoAvailability } from '../agent/gemini-nano.js';
 
 const ALL_STORAGE_KEYS = Object.values(STORAGE_KEYS);
@@ -96,9 +97,7 @@ function populateModelSelect() {
 function wireEvents() {
   accountSigninBtn?.addEventListener('click', onAccountSignInClick);
   accountSignoutBtn?.addEventListener('click', onAccountSignOutClick);
-  if (accountManageLink) {
-    accountManageLink.href = `${(CONNECT_ORIGINS && CONNECT_ORIGINS[0]) || ''}/account`;
-  }
+  refreshManageAccountLink();
   validateBtn.addEventListener('click', onValidateClick);
   changeKeyBtn.addEventListener('click', onChangeKeyClick);
   modelSelect.addEventListener('change', onModelChange);
@@ -119,7 +118,10 @@ function wireEvents() {
   });
 
   // Sign-in completes in another tab (the connect handoff), so re-render the
-  // account section when the auth keys change under us.
+  // account section when the auth keys change under us. Also re-resolve the
+  // "Manage account" link when the active channel config changes, so an
+  // options tab left open across a server-side channel flip does not keep
+  // pointing "Manage account" at the pre-flip environment's origin.
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
@@ -130,8 +132,25 @@ function wireEvents() {
       ) {
         refreshAccount();
       }
+      if (changes[LEXI_CHANNEL_CONFIG]) {
+        refreshManageAccountLink();
+      }
     });
   }
+}
+
+/**
+ * Resolve the "Manage account" link's origin from the ACTIVE channel (prod
+ * app.getlexi.io or staging.getlexi.io), cache-first, so it tracks a channel
+ * flip. Async — the link is (re)populated once the config resolves.
+ */
+function refreshManageAccountLink() {
+  if (!accountManageLink) return;
+  getActiveConfig()
+    .then((cfg) => {
+      accountManageLink.href = `${cfg.connect_origin}/account`;
+    })
+    .catch(() => {});
 }
 
 // ---------------------------------------------------------------------------

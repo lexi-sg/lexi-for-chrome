@@ -98,38 +98,71 @@ export const PORT_NAME = 'lexi-sidepanel';
 export const AGENT_MODE_AVAILABLE = true;
 
 // ---------------------------------------------------------------------------
-// Build channel — selects the Lexi backend + connect-page origins this build
-// talks to. 'prod' points at api.getlexi.io / app.getlexi.io; 'staging' points
-// at the staging hosts. scripts/package.sh / build-lite.mjs may rewrite the
-// single line below for a channel-specific artifact; the source default here is
-// 'staging' so an unpacked dev build talks to staging out of the box.
+// Backend channel — which Lexi backend (+ connect-page origin) this build
+// talks to. RUNTIME-RESOLVED, not baked: on startup (and periodically) the
+// extension GETs RUNTIME_CONFIG_URL — the ONE stable control-plane URL, always
+// on the always-up prod host — and caches the active channel in
+// chrome.storage.local[LEXI_CHANNEL_CONFIG]. Every backend call then resolves
+// its base from that cache (see background/channel-config.js getActiveConfig).
+// The maps below are the BAKED fallback AND the ONLY host values ever accepted
+// (see CHANNEL_ALLOWLIST). Until the first refresh completes — and whenever the
+// fetch fails or returns an off-allowlist payload — DEFAULT_CHANNEL is used, so
+// the product works offline-of-config on first launch (defaults to prod).
+//
+// A single server-side env var (LEXI_EXTENSION_CHANNEL: production | staging)
+// flips which channel RUNTIME_CONFIG_URL reports, so one published ZIP can be
+// pointed at staging (for the Chrome Web Store review login) or prod (public)
+// with NO new upload.
+//
+// BUILD_CHANNEL is retained ONLY for backwards-compat with the packagers
+// (scripts/package.sh, build-lite.mjs) which still rewrite this one line; it no
+// longer drives the API base, which is runtime-resolved.
 // ---------------------------------------------------------------------------
 export const BUILD_CHANNEL = 'staging';
 
-const CHANNELS = {
-  prod: {
-    apiBase: 'https://api.getlexi.io',
-    connectUrl: 'https://app.getlexi.io/extension/connect',
-    connectOrigins: ['https://app.getlexi.io'],
+// The active channel until a runtime-config refresh says otherwise.
+export const DEFAULT_CHANNEL = 'production';
+
+// Baked channel maps. Keys align with the backend's get_extension_channel()
+// values ('production' | 'staging'). Each entry is the EXACT, canonical set of
+// hosts for that channel; a fetched runtime-config is accepted only if it
+// matches one of these entries byte-for-byte (see channel-config.js).
+export const CHANNELS = {
+  production: {
+    channel: 'production',
+    api_base: 'https://api.getlexi.io',
+    connect_url: 'https://app.getlexi.io/extension/connect',
+    connect_origin: 'https://app.getlexi.io',
   },
   staging: {
-    apiBase: 'https://staging-api.getlexi.io',
-    connectUrl: 'https://staging.getlexi.io/extension/connect',
-    connectOrigins: ['https://staging.getlexi.io'],
+    channel: 'staging',
+    api_base: 'https://staging-api.getlexi.io',
+    connect_url: 'https://staging.getlexi.io/extension/connect',
+    connect_origin: 'https://staging.getlexi.io',
   },
 };
 
-const _channel = CHANNELS[BUILD_CHANNEL] || CHANNELS.staging;
+// The ONE stable control-plane URL baked into every build. ALWAYS the prod
+// host (the always-up backend), regardless of the active channel: this is how
+// a published extension learns whether to point itself at prod or staging.
+export const RUNTIME_CONFIG_URL = 'https://api.getlexi.io/api/extension/runtime-config';
 
-// ---------------------------------------------------------------------------
-// Lexi backend endpoints (account mode). LEXI_API_BASE is the HTTP origin;
-// the product-chat transport and the Anthropic-shaped proxy hang off it.
-// ---------------------------------------------------------------------------
-export const LEXI_API_BASE = _channel.apiBase;
-// The lexi-frontend handoff page the "Sign in with Lexi" button opens.
-export const CONNECT_URL = _channel.connectUrl;
+// Baked host allowlist. A fetched/stored channel config is REJECTED WHOLESALE
+// unless every host it names is on these lists — so a compromised or spoofed
+// control plane can never point the extension at an attacker origin.
+export const CHANNEL_ALLOWLIST = {
+  api_base: ['https://api.getlexi.io', 'https://staging-api.getlexi.io'],
+  connect_origin: ['https://app.getlexi.io', 'https://staging.getlexi.io'],
+};
+
 // Origins onMessageExternal accepts a LEXI_EXTENSION_CONNECT handoff from.
-export const CONNECT_ORIGINS = _channel.connectOrigins;
+// Kept BAKED (both channels) and NEVER narrowed to the fetched value — the
+// connect-page origin check must not depend on runtime-fetched data.
+export const CONNECT_ORIGINS = ['https://app.getlexi.io', 'https://staging.getlexi.io'];
+
+// chrome.storage.local key holding the cached, validated active channel config.
+export const LEXI_CHANNEL_CONFIG = 'lexi_channel_config';
+
 // Agent-mode proxy (Anthropic-shaped SSE passthrough) + Chat-mode product pipeline.
 export const EXTENSION_PROXY_PATH = '/api/extension/messages';
 export const CHAT_PATH = '/llm/chat';

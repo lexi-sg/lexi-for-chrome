@@ -140,15 +140,35 @@ function buildAccountModeExtensionCopy(mockOrigin) {
   manifest.content_security_policy = csp;
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
+  // The backend channel is now RUNTIME-resolved (getActiveConfig): with no
+  // cached LEXI_CHANNEL_CONFIG the extension falls back to the baked
+  // DEFAULT_CHANNEL ('production'), so point CHANNELS.production.api_base at the
+  // mock. (In production this host is baked + allowlisted; here we rewrite the
+  // baked default itself, which getActiveConfig returns without an allowlist
+  // check — the loopback mock would fail the allowlist if fed through the
+  // fetched-config path, so it MUST be the baked default that carries it.)
   const configPath = path.join(dir, 'src', 'config.js');
   let configSrc = fs.readFileSync(configPath, 'utf8');
   const before = configSrc;
   configSrc = configSrc.replace(
-    /apiBase:\s*'https:\/\/staging-api\.getlexi\.io'/,
-    `apiBase: '${mockOrigin}'`,
+    /api_base:\s*'https:\/\/api\.getlexi\.io'/,
+    `api_base: '${mockOrigin}'`,
   );
   if (configSrc === before) {
-    throw new Error('buildAccountModeExtensionCopy: failed to patch CHANNELS.staging.apiBase — config.js shape changed');
+    throw new Error('buildAccountModeExtensionCopy: failed to patch CHANNELS.production.api_base — config.js shape changed');
+  }
+  // Neutralize the control-plane URL so the startup refreshChannelConfig() can
+  // never reach (and cache) the REAL prod runtime-config — which would override
+  // the baked-default patch above and send chat to real prod instead of the
+  // mock. Pointing it at an unimplemented mock path makes the fetch 404, so the
+  // refresh fails safe and getActiveConfig keeps returning the patched default.
+  const beforeUrl = configSrc;
+  configSrc = configSrc.replace(
+    /export const RUNTIME_CONFIG_URL = '[^']*';/,
+    `export const RUNTIME_CONFIG_URL = '${mockOrigin}/__no_runtime_config__';`,
+  );
+  if (configSrc === beforeUrl) {
+    throw new Error('buildAccountModeExtensionCopy: failed to patch RUNTIME_CONFIG_URL — config.js shape changed');
   }
   fs.writeFileSync(configPath, configSrc, 'utf8');
 

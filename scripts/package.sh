@@ -30,23 +30,28 @@ open(path, 'w').write(new)
 print(f"staged build channel: {channel}")
 EOF
 
-# For the prod store build, declare ONLY the production Lexi backend host.
-# The source manifest lists staging + api.anthropic.com for dev/e2e, but the
-# shipped login-only product only ever contacts api.getlexi.io, so a prod ZIP
-# must not request the others (unused host permissions get rejected).
+# For the prod store build, declare BOTH Lexi backend hosts. The runtime
+# channel switch (RUNTIME_CONFIG_URL -> {api_base}) means ONE published ZIP may
+# talk to EITHER api.getlexi.io (prod) or staging-api.getlexi.io (the CWS-review
+# login window), flipped by a server-side env var — so both hosts must be
+# declared. api.getlexi.io is also the config control plane. api.anthropic.com
+# is dropped (the agent proxy now goes through the Lexi backend).
 if [ "$CHANNEL" = "prod" ]; then
 python3 - "$STAGE/manifest.json" <<'EOF'
 import json, sys
 path = sys.argv[1]
 m = json.load(open(path))
-m['host_permissions'] = ['https://api.getlexi.io/*']
+m['host_permissions'] = [
+    'https://api.getlexi.io/*',
+    'https://staging-api.getlexi.io/*',
+]
 # The Chrome Web Store assigns the published item's ID from its own key; a
 # baked-in "key" that doesn't match the item is rejected on upload. Drop it for
 # the store build (kept in source only for stable-ID local unpacked dev).
 m.pop('key', None)
 json.dump(m, open(path, 'w'), indent=2, ensure_ascii=False)
 open(path, 'a').write('\n')
-print('staged host_permissions: https://api.getlexi.io/*; key removed for store')
+print('staged host_permissions: api.getlexi.io + staging-api.getlexi.io; key removed for store')
 EOF
 fi
 

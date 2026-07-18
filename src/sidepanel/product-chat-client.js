@@ -30,7 +30,7 @@ function sleep(ms) {
  * (stream_complete / error / cancel) has been observed OR the caller aborts.
  *
  * @param {object} opts
- * @param {string} opts.baseUrl                 - Lexi API origin (LEXI_API_BASE)
+ * @param {string} opts.baseUrl                 - Lexi API origin (active channel's api_base)
  * @param {string} opts.token                   - opaque lexiext_ Bearer token
  * @param {number|string} opts.conversationId   - 0 for a new conversation
  * @param {string} opts.userMessage
