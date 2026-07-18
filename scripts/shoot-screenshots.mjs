@@ -28,7 +28,8 @@
 //   layout are what's on screen), then injects DOM nodes *directly*
 //   into #messages via page.evaluate(), using the EXACT class-name contract
 //   chat-render.js's real renderer produces (.lexi-msg/.lexi-msg-user/
-//   .lexi-msg-assistant/.lexi-msg-body/.lexi-disclaimer-line for chat,
+//   .lexi-msg-assistant/.lexi-msg-body for chat — chat-render.js no longer
+//   emits a per-message disclaimer line, see startAssistant()/finalize()),
 //   .lexi-risk-item/.lexi-risk-{high,med,low}/.lexi-risk-dot/.lexi-risk-body
 //   for "Flag risky terms", .lexi-table-scroll/table/thead/tbody (renderTable's
 //   own markup) for "Key dates & obligations", and a clone of
@@ -87,8 +88,15 @@ const OUT_DIR = outDirArg
 // Mirrors src/config.js's STORAGE_KEYS byte-for-byte (this is a plain Node
 // script, not an ES-module-aware content script, and can't import an
 // extension-context ES module directly — same convention test/e2e.spec.js
-// already documents/uses for the same reason).
+// already documents/uses for the same reason). The product is login-first
+// now (see src/sidepanel/sidepanel.js's isAuthenticated()/refreshAuthUI()):
+// AUTH_MODE/EXTENSION_TOKEN/ACCOUNT_INFO drive the signed-in account chip.
+// API_KEY (BYOK) is retained only as a hidden/dev e2e escape hatch and is
+// never seeded by this script anymore.
 const STORAGE_KEYS = {
+  AUTH_MODE: 'lexi_auth_mode',
+  EXTENSION_TOKEN: 'lexi_extension_token',
+  ACCOUNT_INFO: 'lexi_account_info',
   API_KEY: 'lexi_api_key',
   MODEL: 'lexi_model',
   APPROVAL_MODE: 'lexi_approval_mode',
@@ -139,17 +147,23 @@ async function main() {
     const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
     console.log(`Loaded extension "${manifest.name}" (${extensionId})`);
 
-    // ---- Seed the key + settings + agent-mode site grant, mirroring --------
-    // test/e2e.spec.js's beforeAll exactly (SITE_GRANTS shape from
-    // permission-manager.js: { [origin]: { agentEnabled, classes, expiresAt,
-    // onceGrants } }).
-    const apiKey = STATIC_ONLY
-      ? 'sk-ant-demo-static-only-not-a-real-key-0000000000000000000000'
-      : process.env.ANTHROPIC_API_KEY;
+    // ---- Seed the signed-in account state + settings + agent-mode site -----
+    // grant, mirroring test/account-mode.spec.js's own seeding shape
+    // (AUTH_MODE='account' + a bearer EXTENSION_TOKEN + ACCOUNT_INFO is
+    // exactly what boot()/refreshAuthUI() need to show the account chip and
+    // skip the "Sign in with Lexi" screen — see src/sidepanel/sidepanel.js).
+    // SITE_GRANTS shape is unchanged from permission-manager.js: { [origin]:
+    // { agentEnabled, classes, expiresAt, onceGrants } }. Live mode still
+    // needs a real signed-in session to hit the real /llm/chat pipeline —
+    // out of scope here (see file header: static-only is the only mode this
+    // task exercises).
+    const demoAccount = { email: 'counsel@firm.com', first_name: 'Counsel', tier: 'Pro' };
     await sw.evaluate(
-      async ({ keys, apiKey, origin }) => {
+      async ({ keys, account, origin }) => {
         await chrome.storage.local.set({
-          [keys.API_KEY]: apiKey,
+          [keys.AUTH_MODE]: 'account',
+          [keys.EXTENSION_TOKEN]: 'lexiext_demo-static-only-not-a-real-token-000000000000000000',
+          [keys.ACCOUNT_INFO]: account,
           [keys.MODEL]: 'claude-sonnet-5',
           [keys.APPROVAL_MODE]: 'manual',
           [keys.SITE_GRANTS]: {
@@ -157,7 +171,7 @@ async function main() {
           },
         });
       },
-      { keys: STORAGE_KEYS, apiKey, origin: fixturesOrigin },
+      { keys: STORAGE_KEYS, account: demoAccount, origin: fixturesOrigin },
     );
 
     // ---- Open the fixtures tab, then the panel as a plain tab (same tabId --
@@ -317,44 +331,53 @@ async function clearMessages(panel) {
   });
 }
 
-// KNOWN ISSUE (as of this writing, sidepanel.css is mid-edit by another
-// concurrent agent — do not "fix" this here, just work around it for clean
-// demo screenshots): #key-banner, #secondary-actions-menu, #agent-enable-row,
-// and #acting-bar are all styled with an unconditional ID-selector
-// `display: flex`, with no `#id[hidden] { display: none }` override. An ID
-// selector outranks the UA stylesheet's `[hidden] { display: none }` rule,
-// so setting `.hidden = true` (or never un-hiding the markup's default
-// `hidden` attribute) silently fails to actually hide these elements — they
-// render permanently visible regardless of app state (this would also bite
-// real users, e.g. the key-banner staying up after a key is saved; worth
-// flagging upstream, but out of scope for this asset-pipeline task since
-// src/ is owned by a concurrent edit). This script forces the chrome-only
-// elements closed (and the acting bar to an explicit, deliberate state) with
-// an `!important` inline override so demo screenshots stay clean regardless
-// of that CSS bug's current state (idempotent and harmless once the bug is
-// fixed upstream). Also settles the `.lexi-msg { animation: lexi-fade-in
-// 160ms ease; }` entrance animation and gives the context chip a realistic
-// "reading this page" label instead of a "No page detected" default
-// (harmless cosmetic override, no functional state is changed).
+// sidepanel.css now carries a blanket `[hidden] { display: none !important; }`
+// guard (see its "[hidden] GUARD" section) so plain `.hidden = true` reliably
+// hides #key-banner/#secondary-actions-menu/#agent-enable-row/#signin-screen
+// regardless of any other `display` rule on those ids — the older ID-selector
+// bug this function used to work around upstream is fixed. This still forces
+// those chrome-only elements closed (and the acting bar to an explicit,
+// deliberate state) so demo screenshots stay clean and deterministic
+// regardless of boot()'s own async settling. It also forces the account chip
+// to its signed-in demo state (email/avatar/usage) so the screenshot never
+// depends on the live GET_SESSION network round-trip (which has no backend to
+// answer it in this sandboxed run and would otherwise leave the usage meter
+// blank), settles the `.lexi-msg { animation: lexi-fade-in 160ms ease; }`
+// entrance animation, and gives the context chip a realistic "reading this
+// page" label instead of a "No page detected" default (harmless cosmetic
+// overrides, no functional state is changed beyond what real sign-in would
+// produce).
 async function tidyPanelChrome(panel, { contextTitle, actingBarText } = {}) {
   await panel.evaluate(
     ({ contextTitle, actingBarText }) => {
       const forceHide = (id) => {
         const el = document.getElementById(id);
-        if (el) el.style.setProperty('display', 'none', 'important');
+        if (el) el.hidden = true;
       };
       forceHide('key-banner');
       forceHide('secondary-actions-menu');
       forceHide('agent-enable-row');
+      forceHide('signin-screen');
+
+      // Signed-in account chip: pinned visible with realistic demo identity —
+      // never a BYOK/API-key card, never "No account".
+      const accountChip = document.getElementById('account-chip');
+      const accountEmail = document.getElementById('account-email');
+      const accountAvatar = document.getElementById('account-avatar');
+      const accountUsage = document.getElementById('account-usage');
+      if (accountChip) accountChip.hidden = false;
+      if (accountEmail) accountEmail.textContent = 'counsel@firm.com';
+      if (accountAvatar) accountAvatar.textContent = 'C';
+      if (accountUsage) accountUsage.textContent = 'Pro · 42 / 500 this month';
 
       const actingBar = document.getElementById('acting-bar');
       const actingIntent = document.getElementById('acting-intent');
       if (actingBar) {
         if (actingBarText) {
-          actingBar.style.setProperty('display', 'flex', 'important');
+          actingBar.hidden = false;
           if (actingIntent) actingIntent.textContent = actingBarText;
         } else {
-          actingBar.style.setProperty('display', 'none', 'important');
+          actingBar.hidden = true;
         }
       }
 
@@ -398,10 +421,6 @@ async function injectQAAnswer(panel) {
         body.appendChild(p);
       }
       root.appendChild(body);
-      const disclaimer = document.createElement('div');
-      disclaimer.className = 'lexi-disclaimer-line';
-      disclaimer.textContent = 'Not legal advice.';
-      root.appendChild(disclaimer);
       messages.appendChild(root);
       messages.scrollTop = messages.scrollHeight;
     },
@@ -456,10 +475,6 @@ async function injectRiskFlagResult(panel) {
       }
       root.appendChild(body);
 
-      const disclaimer = document.createElement('div');
-      disclaimer.className = 'lexi-disclaimer-line';
-      disclaimer.textContent = 'Not legal advice.';
-      root.appendChild(disclaimer);
       messages.appendChild(root);
       messages.scrollTop = messages.scrollHeight;
     },
@@ -548,10 +563,6 @@ async function injectKeyDatesResult(panel) {
       body.appendChild(wrap);
       root.appendChild(body);
 
-      const disclaimer = document.createElement('div');
-      disclaimer.className = 'lexi-disclaimer-line';
-      disclaimer.textContent = 'Not legal advice.';
-      root.appendChild(disclaimer);
       messages.appendChild(root);
       messages.scrollTop = messages.scrollHeight;
     },
@@ -621,8 +632,10 @@ async function injectAgentConfirmCard(panel, fixturesPage) {
 async function runLiveExplainClause(panel) {
   await panel.locator('#prompt-input').fill('Explain the dispute resolution clause on this page.');
   await panel.locator('#send-btn').click();
+  // chat-render.js no longer emits a disclaimer line; wait for the streamed
+  // answer body to actually contain text instead.
   await panel
-    .locator('.lexi-msg-assistant .lexi-disclaimer-line')
+    .locator('.lexi-msg-assistant .lexi-msg-body p')
     .first()
     .waitFor({ timeout: 60_000 });
 }

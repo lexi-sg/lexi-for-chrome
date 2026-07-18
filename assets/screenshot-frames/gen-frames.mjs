@@ -24,7 +24,7 @@ const FRAMES = [
   // (proportionally re-expanded to fill the mockup width). All four
   // screenshots are split scenes (fixture page + real side panel) at the
   // full capture width.
-  { n: 1, caption: 'Ask about any page you are reading', cropW: 1280 },
+  { n: 1, caption: 'Ask about any page you’re reading', cropW: 1280 },
   { n: 2, caption: 'Flag risky terms before you sign', cropW: 1280 },
   { n: 3, caption: 'Key dates & obligations, extracted instantly', cropW: 1280 },
   { n: 4, caption: 'Agent Mode asks before it acts', cropW: 1280 },
@@ -211,7 +211,7 @@ function template({ n, caption, cropW }) {
       </div>
     </div>
     <div class="vignette"></div>
-    <div class="footer">getlexi.io &middot; Not legal advice</div>
+    <div class="footer">getlexi.io</div>
   </div>
 </body>
 </html>
