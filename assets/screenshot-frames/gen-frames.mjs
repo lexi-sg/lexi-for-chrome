@@ -28,7 +28,7 @@ const FRAMES = [
   // browser window.
   { n: 1, caption: 'Ask about any page you are reading', cropW: 1280 },
   { n: 2, caption: 'Flag risky terms before you sign', cropW: 1280 },
-  { n: 3, caption: 'Your key, your data — 100% private', cropW: 520 },
+  { n: 3, caption: 'Private by design — your data stays yours', cropW: 520 },
   { n: 4, caption: 'Agent Mode asks before it acts', cropW: 1280 },
 ];
 

@@ -56,9 +56,8 @@ Productivity
 
 ## Short description (CWS "Summary", 132-char limit)
 
-> AI legal co-pilot in your browser side panel. Explain clauses, flag risky
-> terms, summarize judgments — grounded in the page you're on. Bring your
-> own Claude API key. Not legal advice.
+> AI legal co-pilot in your side panel — explain clauses, flag risky terms,
+> summarize judgments. Grounded, private. Not legal advice.
 
 ## Detailed description
 
@@ -82,11 +81,12 @@ Productivity
 > - **Screenshot & ask** — capture a chart, table, or signature block and
 >   ask about it.
 >
-> **BRING YOUR OWN KEY:** Lexi uses your own Anthropic (Claude) API key.
-> There is no Lexi account and no Lexi server — your key and the page
-> content go directly to Anthropic's API and nowhere else. Pick your model
-> (Sonnet 5 by default, Opus 4.8 or Fable 5 for heavy analysis, Haiku 4.5
-> for speed).
+> **PRIVATE BY DESIGN:** Lexi has no server of its own. The page content
+> you ask about goes directly to the AI provider and nowhere else — never
+> to Lexi, never to any third party. (Setup note: today that means adding
+> your own Anthropic (Claude) API key in the options page; pick your model
+> — Sonnet 5 by default, Opus 4.8 or Fable 5 for heavy analysis, Haiku 4.5
+> for speed.)
 >
 > **OPTIONAL AGENT MODE:** for power users, Lexi can also take actions in
 > the browser (click, type, fill forms) to help with tasks like completing

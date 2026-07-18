@@ -3,8 +3,10 @@
 **The AI operating system for law, in your browser side panel.** Legal
 review, contract analysis, and legal drafting help — explain a clause, flag
 risky terms, extract key dates, summarize a judgment, or ask about a
-screenshot — grounded in whatever page you're actually looking at. No
-account. No Lexi server. Bring your own Anthropic (Claude) API key.
+screenshot — grounded in whatever page you're actually looking at. Private
+by design: there's no Lexi server between you and the AI model. (Today
+that means bringing your own Anthropic (Claude) API key — see
+[BYOK setup](#byok-setup-bring-your-own-key) below.)
 
 Built by the team at [getlexi.io](https://getlexi.io).
 

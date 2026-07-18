@@ -23,7 +23,7 @@
 
   // 12-colour cycling palette for the numbered mark boxes.
   var PALETTE = [
-    '#775AD8', '#DC2626', '#16A34A', '#F59E0B',
+    '#045B6C', '#DC2626', '#16A34A', '#F59E0B',
     '#3B82F6', '#D6409F', '#12B5B0', '#F76B15',
     '#8B5CF6', '#EAB308', '#EC4899', '#14B8A6',
   ];

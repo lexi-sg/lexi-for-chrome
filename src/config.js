@@ -193,9 +193,10 @@ export const DENYLIST = [
 //   --lexi-text            primary text color
 //   --lexi-muted           secondary/meta text color
 //   --lexi-border          hairline border color
-//   --lexi-accent          brand indigo/violet accent
+//   --lexi-accent          brand teal accent (#045b6c light / #24cda5 dark)
 //   --lexi-accent-strong   stronger accent (hover/active states)
-//   --lexi-accent-tint     faint accent background tint (user bubbles)
+//   --lexi-accent-tint     faint accent background tint (hover/selected)
+//   --lexi-user-bubble     flat neutral user-message surface (app messagebox)
 //   --lexi-risk            severity: HIGH / danger / stop
 //   --lexi-warn            severity: MED / caution
 //   --lexi-ok              severity: LOW / success
@@ -210,6 +211,7 @@ export const CSS_TOKENS = [
   '--lexi-accent',
   '--lexi-accent-strong',
   '--lexi-accent-tint',
+  '--lexi-user-bubble',
   '--lexi-risk',
   '--lexi-warn',
   '--lexi-ok',

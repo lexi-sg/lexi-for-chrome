@@ -1,250 +1,293 @@
-# Lexi App Design System (app.getlexi.io)
+# Lexi App Design System (app.getlexi.io) — v2 (CORRECTED)
 
-Source of truth: `donna-frontend` repo (the actual logged-in product — chat, review,
-tracker, vault, etc.), read directly from code on 2026-07-18:
-- `tailwind.config.js` (color/font/animation tokens)
-- `src/styles/tailwind.css` (base layer, `@font-face`, utility layer)
-- `src/styles/citationCheck.css` (a hand-rolled CSS-custom-property tone system —
-  the closest thing this repo has to a formal design-token file)
-- `src/components/Layout/Sidebar.tsx` (nav rail — the one place a dark surface is
-  used deliberately)
-- `src/components/Layout/Layout.tsx` (root font/background wrapper)
-- `src/components/Button/Button.tsx`, `src/helpers/chat.ts` (button + chat-bubble
-  recipes)
-- `src/components/Dashboard/KPICard.tsx`, `src/components/Vault/StatusBadge.tsx`,
-  `src/components/CitationCheck/atoms/VBadge.tsx` (card / badge recipes)
-- `src/components/Messages/composer/ComposerBox.tsx` (the app's most refined,
-  most "designed" surface — the chat input)
+**v2 supersedes v1 in full.** v1's headline recommendation — "use the purple/violet
+`primary` scale (#775AD8) as the extension's accent" — was **wrong**, per direct
+founder correction. This version re-derives the accent from the actual product
+(chat UI + brand mark), explains exactly where the violet came from, and why it
+was a bad signal to follow.
 
-**This is NOT the same brand as `BRAND.md` in this folder.** `BRAND.md` documents
-the marketing site (getlexi.io) — dark, near-black, teal-accent, editorial-serif.
-This document is the **product UI** users actually live in after login — light,
-slate/navy, Basier Circle, restrained ink-colored buttons. Chrome-extension
-surfaces sit *inside the product*, so this file (not `BRAND.md`) is the correct
-reference for the side panel's palette/typography.
-
-**Important caveat on dark mode:** `donna-frontend` sets `darkMode: 'class'` in
-Tailwind but the app is, in practice, **light-mode only** — a repo-wide search
-turns up `dark:` variants in exactly 4 files (SuggestionCard, CommandPalette),
-and no app-wide dark theme toggle exists. Dark values below for tokens that
-have no real app equivalent are **derived** (clearly marked "derived") from the
-one deliberately-dark surface that *does* exist in the product: the navy nav
-rail (`brand.navy` family), which is always-dark regardless of OS theme.
+Re-verified 2026-07-18, same source repo (`donna-frontend`), but this time
+tracing every color to (a) its **actual render frequency in the real chat page**
+(`src/components/Chat/ChatView.tsx` → `MessagesList` → `RenderMessage` →
+`EditableUserMessage`, **not** the unused legacy `ChatBubble.tsx`), and (b) **git
+history** on `tailwind.config.js`, plus (c) pixel-sampling the two founder-supplied
+reference images (`icons/icon128.png`, `assets/brand/ref-1.png`) and two more
+marketing screenshots (`ref-2.png`, `ref-3.png`) already sitting in this folder.
 
 ---
 
-## 1. Palette
+## 0. The headline correction
+
+**The purple is boilerplate scaffolding, not brand.** `git log -p` on
+`tailwind.config.js` shows the `primary: {50…900}` violet scale (`600` =
+`#775AD8`) has existed **since the repo's literal first commit** (`643de3a95
+feat: init commit`) — it is a generic starter-kit color ramp that was never
+replaced with real brand colors. In the current codebase it survives in exactly
+**9 call sites**, all decorative/incidental, **none in the chat message list or
+composer**:
+- `LocaleDropdown.tsx` / `LanguageSwitcher.tsx` — a checkmark icon color
+- `EditableQuestion.tsx` / `EnhancedEditableQuestion.tsx` — a hover icon tint
+- `CaseRulesAdmin/*` — an internal admin tool, 3 files
+- `Vault/UploadChooserDialog.tsx` — a focus ring
+
+v1's own analysis *said* "the app's actual primary CTA is ink-slate, not
+purple" — and then recommended purple anyway, reasoning that it'd give the
+extension "a distinct AI-assistant personality." That reasoning is the bug:
+it treated an unused legacy color ramp as if it were an intentional secondary
+brand accent. It isn't. Per the founder: **stop treating #775AD8 as a Lexi
+color at all.**
+
+**The real brand accent is teal — and it genuinely does appear inside the
+chat product**, just not on buttons. See §1.
+
+---
+
+## 1. What color is the chat, really? (three different teals + one navy — read this whole section, they are NOT interchangeable)
+
+There are four distinct color families in play across Lexi surfaces. Conflating
+them is exactly how v1 went wrong.
+
+### (A) The chat product's functional/interactive color = **dark navy-slate, not teal**
+Verified in `git log -p tailwind.config.js`: **two days before this analysis**
+(commit `8e85ff504`, "deploy: ZIP download + batch translation…", 2026-07-16),
+`brand.action` — the token behind every primary button, including the chat
+send button (`SendStopButton.tsx`, `bg-brand-action`) — was changed **from
+teal to navy**:
+```diff
+- action: '#005564',        // deep teal (the OLD brand.action)
+- 'action-hover': '#045B6C',
++ action: '#0F172A',        // dark slate/navy (the CURRENT brand.action)
++ 'action-hover': '#1E293B',
+```
+And before *that* (an earlier commit), the token literally named `brand.teal`
+was renamed/repointed to navy, with a comment in the config explaining it:
+> "Navy is now the sole brand/chrome color (#0E1522) … Teal keys retained but
+> repointed to navy so all existing `*-brand-teal*` utility classes remap with
+> zero JSX edits."
+
+**So: as of today, the color behind the send button, the sidebar rail, active
+nav pills, and every `bg-brand-*`/`bg_color-button-primary` surface is navy
+(`#0E1522` chrome / `#0F172A` action), not teal.** Message bubbles carry no
+color at all (see §2) — they're neutral gray/white. This is the ground truth
+for "what accent does the chat UI's *chrome* use": none, functionally — it's
+achromatic ink/slate.
+
+### (B) The brand mark that **literally renders inside the chat welcome screen** = teal `#045B6C`
+This is the piece v1 missed by reading the wrong avatar component. The real
+welcome/greeting screen users see before their first message
+(`src/components/Chat/GreetingHero.tsx`) renders:
+```tsx
+<img src="/img/logos/lexi-mark-teal.png" alt="Lexi" ... />
+```
+Pixel-sampled: **solid `#045B6C`, no other colors, no gradient** (14,641/14,641
+opaque pixels are that exact value). The same file is reused in
+`Home/NewUserHome.tsx`'s "Ask Lexi" badge pill (a small `w-3 h-3` teal mark next
+to badge text). This is the *only* color asset that appears directly, verbatim,
+inside the logged-in product's chat/home screens outside of neutrals — and it's
+teal, confirming the founder's instinct. (Aside: `NewUserHome.tsx` names its own
+badge-text color constant `BRAND_TEAL` — but sets it to `'#0E1522'`, i.e. navy.
+That's a leftover-naming bug from the same teal→navy rename in (A); it's a good
+illustration of exactly how a naive grep for "teal" in this codebase misleads
+you into navy. Don't repeat that mistake.)
+
+The Chrome extension's own `icons/icon128.png` (founder-supplied) samples to
+the **identical** `#045B6C` (dominant pixel `(4, 91, 108)` across the solid
+background). Extension logo and in-app greeting mark are the same teal,
+literally the same hex, not just "similar."
+
+### (C) The marketing site (getlexi.io, `ref-1/2/3.png`) = a brighter teal-green accent, ~`#24CDA5`
+Pixel-sampled from the "● PROVEN RESULTS" / "● CLIENT ONBOARDING" / "● DRAFTING
+& REVIEW" section-eyebrow dots in `ref-2.png`/`ref-3.png`: solid **`(36, 205,
+165)` ≈ `#24CDA5`** (a vivid teal-green, distinct from both the dark logo teal
+and any Tailwind stock teal/emerald shade — it's a bespoke marketing-site
+token, not present in `donna-frontend`'s own config; that site is a separate
+repo/theme per the comment in `tailwind.config.js`: *"#025D6C used in
+lexi-landing-page-v2"*). `ref-1.png` (the page's very top, above the fold) is
+mid-scroll/hero-only and shows no accent dot in frame — the teal dots appear
+further down the same page, which is why a single above-the-fold screenshot
+alone under-reports it.
+
+### (D) Historical brand teal (pre-navy-migration), still in git history
+Before the navy migration, this exact repo's `brand` token block read:
+```js
+teal: '#045B6C',
+'teal-hover': '#034552',
+'teal-tint': '#B2DFE5'
+```
+Notice **(B) and (D) are the same base hex** — `#045B6C` is not a one-off; it's
+the deliberate, designed brand teal this whole product used before the navy
+pivot, and it's the same value baked into the current extension icon.
+
+### Bottom line
+| Family | Hex | Where it actually lives today |
+|---|---|---|
+| Chat chrome / CTAs (current) | `#0E1522` navy · `#0F172A` action | send button, sidebar, active pills — **not teal, not purple** |
+| **Brand teal (logo/mark, in-chat)** | **`#045B6C`** | GreetingHero mark, "Ask Lexi" badge icon, extension's own `icon128.png` |
+| Marketing accent (bright teal-green) | `#24CDA5` (sampled) | getlexi.io section-eyebrow dots (separate repo/theme) |
+| Legacy/scaffolding — **not brand** | `#775AD8` violet | 9 incidental call sites, present since init commit, **do not use** |
+
+---
+
+## 2. Chat layout recipes (the REAL components — corrected from v1)
+
+v1 sourced "chat bubble" styling from `src/components/Chat/ChatBubble.tsx` —
+**this component is not used by the actual chat page.** It's dead-ish legacy
+code only wired into `src/pages/meetings/[id].tsx`. The real chat render tree,
+confirmed via `ChatView.tsx → MessagesList.tsx → RenderMessage.tsx →
+EditableUserMessage.tsx`, is materially different:
+
+- **No avatars at all**, for either user or assistant. (v1 incorrectly
+  documented a pastel-hashed `w-8 h-8` circular initials avatar — that's the
+  unused `ChatBubble.tsx`/`createUserMessage()` recipe, real chat has none.)
+- **User message**: flat bubble, right-aligned, `max-w-[70%]`, classes
+  `bg-bg_color-messagebox mr-2 ml-auto px-4 py-2.5 rounded-2xl` where
+  `bg_color.messagebox = #e7e7e6` (flat neutral gray, **not** a brand color,
+  **not** teal/navy/purple). Text `text-base`, markdown-rendered
+  (`UserMessageMarkdown`). Hover-reveal action row (copy / save-as-template /
+  edit / timestamp+sender) sits absolutely-positioned below the bubble,
+  `opacity-0 group-hover:opacity-100`.
+- **Assistant message**: **no bubble background at all** — `text-gray-800`,
+  left-aligned, `w-full max-w-[85%]`, small `pl-4` offset (in place of an
+  avatar gutter). Content renders through `BlockRenderer` (the v2 block-stream
+  renderer — text/thinking/tool/artifact/citation blocks), not a plain markdown
+  string. Feedback row (copy/regenerate/sources chip) below, only once
+  streaming finishes.
+- **Streaming/loading cue**: three small pulsing gray dots
+  (`bg-gray-400 animate-pulse`, staggered 150ms), not a spinner or colored
+  indicator.
+- **Spacing**: `mb-4` between messages, max content width
+  `max-w-4xl`→`2xl:max-w-6xl`, `pt-8` top padding on the whole list.
+- **Radius**: bubbles `rounded-2xl` (16px); the composer uses a bespoke
+  `rounded-[26px]` / `rounded-[22px]` compact — the single most "designed"
+  radius in the app.
+- **Font sizes**: user/assistant body `text-base` (16px)/`text-sm` in older
+  paths; composer textarea `text-[16.5px]` full / `text-[14.5px]` compact;
+  micro chip/badge text `13px`; section-eyebrow eyebrow-style labels
+  `10–11.5px` uppercase.
+- **Suggestion chips** (`SuggestionChips.tsx`, shown on the empty/welcome
+  chat state): plain outline pills, `rounded-full border border-slate-200
+  bg-white px-[13px] py-[7px] text-[13px] text-slate-600`, icon
+  `text-slate-400`, hover → `border-slate-300 text-slate-900 shadow-sm`. **No
+  teal, no purple, no colored dot** — fully neutral, unlike the marketing
+  site's colored-dot eyebrow style in §1(C).
+- **Composer** (`ComposerBox.tsx`, the app's most refined surface):
+  `bg-white`, border `border-slate-200`, bespoke two-layer slate-tinted shadow
+  (`rgba(15,23,42,...)` both layers — i.e. shadow color = the same ink as
+  `brand.action` text, not generic black), `focus-within` deepens the shadow
+  and darkens the border — **no visible focus ring**, the shadow/border shift
+  *is* the focus affordance. Textarea `placeholder:text-slate-400`.
+- **Send/stop button** (`SendStopButton.tsx`): circular `rounded-full`,
+  `bg-brand-action` (`#0F172A`) → `hover:bg-brand-action-hover` (`#1E293B`),
+  disabled state `bg-slate-200 text-slate-400`. This is the one place a solid
+  color fill appears in the whole composer, and it is navy, confirmed.
+- **Mode/model picker** (`ModeButton.tsx`): borderless, "Claude-style" —
+  `text-slate-600`, active/open state `bg-slate-100 text-slate-900`. No accent
+  color anywhere in this control either.
+
+**Net read on the real chat UI's own palette: it is almost entirely
+achromatic** (white/slate/gray/navy-ink), by deliberate design — the *only*
+splash of color a user sees in the whole chat surface is the small teal Lexi
+mark in the empty-state greeting (§1B). Bear this in mind for §4's
+recommendation: pixel-matching "how the app does chats" for *layout* means
+neutral/flat/no-avatar/no-bubble-color — it does **not** mean the chat is
+teal-themed internally.
+
+---
+
+## 3. Neutrals, dark values, typography, radii, shadows (unchanged from v1 — these were correct)
 
 ### Light (the app's actual, default, and only fully-realized theme)
-
-| Token | Hex | Where it's used in-app |
+| Token | Hex | Where |
 |---|---|---|
-| Page background | `#F8FAFC` (`bg_color.page` = Tailwind `slate-50`) | `Layout.tsx` root wrapper background |
-| Card / panel / composer surface | `#FFFFFF` | `KPICard`, `ComposerBox`, most cards |
-| Neutral alt surface ("ink" ramp, used interchangeably with slate in places) | `#F5F6F8` → `#0E1117` (`ink-50`…`ink-900`) | occasional alt-neutral scale in `tailwind.config.js` |
-| Border, default/primary | `#CBD5E1` (`slate-300` = `border_color.primary`) | card borders |
-| Border, subtle/secondary | `#E2E8F0` (`slate-200` = `border_color.secondary`) | dividers, composer border |
-| Text, primary | `#0F172A` (`slate-900` = `text_color.primary`) | headings, body |
-| Text, secondary | `#475569` (`slate-600` = `text_color.secondary`) | labels, KPI eyebrow text |
-| Text, tertiary/muted | `#64748B` (`slate-500` = `text_color.tertiary`) | timestamps, helper text |
-| Text, inverted | `#FFFFFF` | text on navy rail / dark buttons |
-| **Primary action / CTA** ("brand.action") | `#0F172A` → hover `#1E293B` | **This is the real primary button color** — 158 call sites (`bg-brand-action`), vs. only 10 for the legacy teal below. Deliberately ink/near-black, not colorful. |
-| Chrome / nav rail (always dark) | `#0E1522` (`brand.navy`) | Sidebar background, fixed regardless of theme |
-| Nav rail hover/active fill | `#232E40` (`brand.navy-light`) | active/hovered nav item pill |
-| Nav rail border | `#2E3A4D` (`brand.navy-border`) | rail dividers, dark-surface card borders |
-| Nav rail muted label | `#94A3B8` (`slate-400`) | inactive nav icon/label on navy |
-| Legacy teal (declining use, being replaced by brand.action) | `#005564` → hover `#045B6C` | a handful of older buttons (`Button.tsx`'s `bg_color.button.primary`) |
-| **Secondary accent — purple** (used for focus rings / selected-state icons, NOT primary CTAs) | 50 `#F6F7FE` · 500 `#9182DE` · 600 `#775AD8` · 700 `#6434D5` | `focus:ring-primary-500`, `text-primary-600` selected-check icons, language switcher |
-| Message-box gray (legacy) | `#E7E7E6` (`bg_color.messagebox`) | older message input skin (superseded in most flows by the white `ComposerBox` recipe below) |
+| Page background | `#F8FAFC` (`slate-50`) | `Layout.tsx` root |
+| Card/panel/composer surface | `#FFFFFF` | composer, cards |
+| Border, primary/secondary | `#CBD5E1` / `#E2E8F0` (`slate-300`/`200`) | card + composer borders |
+| Text primary/secondary/tertiary | `#0F172A` / `#475569` / `#64748B` (`slate-900/600/500`) | headings/body / labels / timestamps |
+| Text inverted | `#FFFFFF` | on navy rail, on `brand-action` buttons |
+| User-message bubble | `#E7E7E6` (`bg_color.messagebox`) | flat neutral, not brand-colored |
 
-### Semantic / status tones (from `StatusBadge.tsx`, `VBadge.tsx` + `citationCheck.css`'s `[data-tone]` system — the app's real 3-tone success/warn/danger language)
-
-| Tone | Badge fill / text (pill usage) | Solid "dot"/accent (citation-check tone vars) |
-|---|---|---|
-| Success / ok / ready | bg `#DCFCE7` (green-100) · text `#166534` (green-800) | `--vfg #15803D` `--vbg #F3FBF5` `--vborder #BBF0C9` `--vdot #22C55E` |
-| Warn / pending | bg `#FEF9C3` (yellow-100) · text `#854D0E` (yellow-800) | `--vfg #B45309` `--vbg #FFFBEB` `--vborder #FDE79A` `--vdot #D97706` |
-| Danger / failed / risk | bg `#FEE2E2` (red-100) · text `#991B1B` (red-800) | `--vfg #B91C1C` `--vbg #FEF2F2` `--vborder #FECACA` `--vdot #DC2626` |
-| Neutral / checking / still-verifying | — | `--vfg #64748B` `--vbg #F8FAFC` `--vborder #E2E8F0` `--vdot #CBD5E1` |
-
-### Dark (derived — no first-class app dark theme exists; anchored to the navy rail, the one real dark surface)
-
+### Dark (still **derived** — `donna-frontend` is light-mode-only in practice; `darkMode:'class'` exists in Tailwind config but only 4 files anywhere in the repo use a `dark:` variant, none of them accent-colored — `SuggestionCard.tsx`, `CommandPalette.tsx`, and two `Editor` files, all plain gray shifts)
 | Token | Hex | Basis |
 |---|---|---|
-| Background | `#0E1522` | = `brand.navy`, the app's one true dark surface |
-| Surface (raised) | `#232E40` | = `brand.navy-light`, the rail's own "raised/active" fill |
-| Border | `#2E3A4D` | = `brand.navy-border`, the rail's real divider color |
-| Text primary | `#F1F5F9` (slate-100) | app's actual text-on-navy is white/near-white |
-| Text muted | `#94A3B8` (slate-400) | app's actual muted-label-on-navy color (used verbatim on rail nav items) |
-| Accent (secondary purple, lightened for dark bg) | `#ABA4EA` (primary-400) → strong `#C9C8F4` (primary-300) | same purple family, stepped lighter for contrast on navy — app has no literal dark-purple token, this is the natural extension of `colors.primary` |
+| Background | `#0E1522` | `brand.navy`, the one real always-dark surface (sidebar) |
+| Raised surface | `#232E40` | `brand.navy-light` |
+| Border | `#2E3A4D` | `brand.navy-border` |
+| Text primary/muted | `#F1F5F9` / `#94A3B8` | rail text-on-navy (real, verbatim) |
 
----
-
-## 2. Typography
-
-- **Family:** `"Basier Circle"` — self-hosted, licensed webfont (`@font-face` in
-  `tailwind.css`, files in `/fonts/BasierCircle-{Regular,Medium,SemiBold,Bold}.*`),
-  weights 400/500/600/700. Applied app-wide via a single `font-basier-circle`
-  class on the root layout wrapper (`Layout.tsx`) — i.e. it's an intentional
-  whole-app override of Tailwind's default sans, not a per-component choice.
-- **Fallback stack** (Tailwind `defaultTheme.fontFamily.sans`, used when Basier
-  Circle hasn't loaded yet): `ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-  Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji"` — i.e.
-  system-first, same family the extension already targets.
-- **No custom monospace** anywhere in the app — no mono `@font-face`, no
-  `font-mono` config override found.
-- **Sizes/weights actually used**, smallest to largest:
-  - `10–11.5px`, weight 600, uppercase, `tracking-wide` — micro labels, badges, "MORE" nav label, citation-check verdict pills
-  - `12–13px` — chips, helper text, secondary buttons
-  - `13–14.5px` — body copy, chat bubbles, composer text (compact mode)
-  - `15–16.5px` — composer text (full mode), section subheads
-  - `30px` (`text-3xl`), weight 600 (semibold) — KPI stat numbers
-- Buttons: weight 500 (`font-medium`) as the default; weight 600 reserved for
-  active/selected states and stat numbers.
-
----
-
-## 3. Radii
-
-No single global `--radius` var — the app uses Tailwind's default radius scale
-directly, chosen per-component by "how pill-like should this feel":
-
-| Tailwind class | px | Used for |
+### Semantic tones (unchanged — real, from `StatusBadge`/`VBadge`/`citationCheck.css`)
+| Tone | Pill | Dot |
 |---|---|---|
-| `rounded-md` | 6px | dense form fields (e.g. inline question editors) |
-| `rounded-lg` | 8px | standard inputs, small dropdown menus |
-| `rounded-xl` | 12px | cards (`KPICard`), CommandPalette rows |
-| `rounded-2xl` | 16px | modals, elevated panels, chat bubble body |
-| `rounded-[22px]` / `rounded-[26px]` | 22 / 26px | **bespoke** — the message composer, a near-pill but not-quite-full radius that's the single most-designed surface in the app |
-| `rounded-full` | 9999px | all buttons, all badges/chips, avatars, nav-rail active pills |
+| Success | bg `#DCFCE7` text `#166534` | `#22C55E` |
+| Warn | bg `#FEF9C3` text `#854D0E` | `#D97706` |
+| Danger | bg `#FEE2E2` text `#991B1B` | `#DC2626` |
+| Neutral | — | `#CBD5E1` |
 
----
+### Typography
+`"Basier Circle"` self-hosted webfont, app-wide via one `font-basier-circle`
+class on the root layout; fallback `ui-sans-serif, system-ui, -apple-system,
+"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`. No custom monospace
+anywhere.
 
-## 4. Shadows
+### Radii
+`rounded-md`(6)/`rounded-lg`(8) inputs · `rounded-xl`(12) cards ·
+`rounded-2xl`(16) bubbles/modals · `rounded-[22–26px]` composer (bespoke) ·
+`rounded-full` buttons/badges/pills.
 
-Also no single global shadow token — but the composer (`ComposerBox.tsx`) has a
-genuinely bespoke, two-layer, **slate-tinted** (not neutral-black) soft shadow
-that reads as the app's real elevation language:
-
+### Shadows
+Composer's bespoke ink-tinted double shadow:
 ```css
-/* resting */
-box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 34px rgba(15, 23, 42, 0.06);
-/* focus / hover (deeper + tighter contact shadow) */
-box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 18px 48px rgba(15, 23, 42, 0.10);
+/* resting */   0 1px 2px rgba(15,23,42,.04), 0 12px 34px rgba(15,23,42,.06);
+/* focus/hover */ 0 1px 2px rgba(15,23,42,.05), 0 18px 48px rgba(15,23,42,.10);
 ```
 
-`rgba(15, 23, 42, …)` is literally `slate-900` — every shadow in the app is
-tinted with the same ink color as the text/CTA, not a generic black. Elsewhere,
-plain Tailwind `shadow-sm` / `shadow-md` / `shadow-2xl` cover menus and
-dropdowns (`CommandPalette`).
-
 ---
 
-## 5. Component recipes
+## 4. Recommendation for the extension
 
-**Button — primary**
-`rounded-full`, `bg-brand-action` (#0F172A), `text-white`, `text-sm`,
-`font-medium`, `px-4 py-2` (or `px-5 py-2.5` for larger CTAs),
-`hover:bg-brand-action-hover` (#1E293B), global `press-effect`
-(`active:scale(0.97)`, 150ms), `transition-colors`.
+**Do not use `#775AD8` (violet) anywhere.** It is boilerplate scaffolding, not
+a Lexi color, confirmed by both usage-site audit and git blame to its origin.
 
-**Button — secondary/white**
-`bg-white`, `border-2 border-border_color-secondary` (slate-200/300),
-`text-text_color-primary`, `hover:bg-bg_color-button-secondary-hover`
-(slate-100), same `rounded-full` + press-effect.
+**Do use teal — anchored on `#045B6C`, the exact hex shared by:**
+1. the extension's own current icon (`icons/icon128.png` samples to this value
+   exactly),
+2. the teal mark that renders live inside the in-app chat welcome screen
+   (`lexi-mark-teal.png` in `GreetingHero.tsx` / `NewUserHome.tsx`'s "Ask Lexi"
+   badge),
+3. this repo's own pre-migration `brand.teal` token (before the Jul-16 navy
+   pivot) — i.e. this is a *designed*, historically-stable brand teal, not a
+   one-off asset color.
 
-**Button — disabled**
-`bg-gray-400`, `border-gray-400`, `cursor-not-allowed`, no hover/press feedback.
-
-**Card**
-`bg-white`, `rounded-xl` (12px), `border border-border_color-primary`
-(slate-300), `p-5`, flat (no shadow) for static dashboard cards; the elevated
-variant (modals, popovers) adds `shadow-2xl` or the bespoke composer shadow.
-
-**Input / textarea — standard field**
-`bg-white`, `rounded-lg` (8px) or `rounded-md` (6px), `border border-gray-300`,
-`focus:ring-2 focus:ring-primary-500 focus:border-primary-500` (purple ring —
-`@tailwindcss/forms` default blue is explicitly overridden to slate/purple
-project-wide in `tailwind.css`'s base layer).
-
-**Input — composer (the app's flagship input)**
-`bg-white`, `rounded-[26px]` (`22px` compact), `border border-slate-200`,
-resting soft double-shadow (§4), `focus-within:border-slate-300` +
-deeper double-shadow — **no visible focus ring**, the border+shadow shift
-carries the whole focus affordance. Placeholder `text-slate-400`.
-
-**Chip / Badge — status pill**
-`inline-flex items-center`, `rounded-full`, `px-3 py-1`, `text-xs font-medium`,
-tri-tone semantic fill (see §1 semantic table): `bg-{tone}-100 text-{tone}-800`.
-
-**Chip / Badge — fine-grained verdict pill** (citation-check system, the most
-"designed" badge in the app)
-`inline-flex`, `gap-6px`, `font-size:11.5px`, `font-weight:600`,
-`padding: 3px 10px 3px 8px`, `border-radius: 9999px`,
-`background: var(--vbg)`, `color: var(--vfg)`, `border: 1px solid var(--vborder)`
-— tone vars swapped via a `[data-tone]` attribute (see semantic table above).
-
-**Chat bubble — user message**
-Avatar: `w-8 h-8 rounded-full`, `shadow-md`, `border-2 border-white`, colored
-per-user via a deterministic pastel hash (`bg-blue-100 text-blue-600`, etc.).
-Bubble: `px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm`, same pastel-100
-background family, `text-gray-800`, `text-sm leading-relaxed`.
-
----
-
-## 6. Mapping — extension `--lexi-*` variables → app token
-
-Read from `src/sidepanel/sidepanel.css`'s `:root` / dark blocks. Every
-`--lexi-*` variable that exists today, and its nearest real app equivalent.
-**Recommendation column says whether to swap the exact hex, or keep as-is
-because it's already close enough that swapping is not worth the diff risk.**
-
-| Extension var | Current (light / dark) | App equivalent | Recommendation |
-|---|---|---|---|
-| `--lexi-bg` | `#ffffff` / `#14141c` | Light: app card/panel white `#FFFFFF` (exact match already). Dark: no app equivalent exists; nearest real dark surface is `brand.navy` `#0E1522`. | Light: keep. Dark: optionally tighten `#14141c` → `#0E1522` to literally reuse the app's one dark surface. |
-| `--lexi-surface` | `#f7f7fb` / `#1e1e29` | Light: `bg_color.page` `#F8FAFC` (near-identical lightness/hue already). Dark: `brand.navy-light` `#232E40` (the rail's own "raised" fill). | Light: keep (already correct hue family). Dark: swap `#1e1e29` → `#232E40` for a true app-derived raised-dark tone. |
-| `--lexi-text` | `#1a1a2e` / `#ececf5` | Light: `text_color.primary` = `slate-900` `#0F172A`. Dark: app's text-on-navy is white/`slate-100` `#F1F5F9`. | Light: swap `#1a1a2e` → `#0F172A` (exact app ink). Dark: `#ececf5` is already effectively equivalent to `#F1F5F9` — keep. |
-| `--lexi-muted` | `#6b6b85` / `#9a9ab4` | Light: `text_color.secondary`/`tertiary` = `slate-600` `#475569` / `slate-500` `#64748B`. Dark: rail's actual muted-label color `slate-400` `#94A3B8`. | Light: swap to `#64748B` (slate-500, matches most muted-copy usages). Dark: `#9a9ab4` is already almost identical to `#94A3B8` — keep. |
-| `--lexi-border` | `#e4e4ef` / `#2c2c3b` | Light: `border_color.secondary` = `slate-200` `#E2E8F0` (near-identical). Dark: rail's real divider `brand.navy-border` `#2E3A4D`. | Light: keep (already matches). Dark: swap `#2c2c3b` → `#2E3A4D` — near-identical, but literally reuses the app token. |
-| `--lexi-accent` | `#5b5bd6` / `#8b8bf0` | App's actual primary CTA is ink-slate (`brand.action` `#0F172A`), **not** purple — but the app *does* have a real secondary purple accent scale (`colors.primary`, used for focus rings/selected icons): 600 `#775AD8` (light), 400 `#ABA4EA` (derived dark, lightened for contrast). | **Recommended (low-risk):** swap to `#775AD8` / dark `#ABA4EA` — reuses tokens that literally exist in `tailwind.config.js` today, keeps the extension's distinct "AI assistant" purple personality separate from the app's neutral CTA buttons. **Alternative (bolder, more "part of the app"):** swap to `brand.action` `#0F172A`/hover `#1E293B` instead — makes extension buttons literally match app buttons, but loses the extension's current purple identity. |
-| `--lexi-accent-strong` | `#4a3aff` / `#a5a5f7` | Light: `colors.primary` 700 `#6434D5`. Dark: `colors.primary` 300 `#C9C8F4`. | Pair with whichever accent option chosen above: purple path → `#6434D5`/`#C9C8F4`; navy path → `#1E293B` (light) with a light slate for dark hover, e.g. `#334155`. |
-| `--lexi-accent-tint` | `#eeeefb` / `#21213a` | Light: `colors.primary` 50 `#F6F7FE` (near-duplicate already). Dark: no app token exists — derived low-alpha tint. | Light: swap to `#F6F7FE` (exact app token). Dark: no change needed — `#21213a` is a reasonable derived tint, or use `rgba(171,164,234,0.14)` over navy for a token-consistent look. |
-| `--lexi-risk` | `#e5484d` (same in both themes — extension never overrides it in dark mode) | citation-check's real "danger" dot: `#DC2626` (Tailwind `red-600`). | Optional swap to `#DC2626` — nearly identical to current, but is the app's actual literal danger-dot value. |
-| `--lexi-warn` | `#f5a623` (same in both themes) | citation-check's real "warn" dot: `#D97706` (`amber-600`), or Tailwind `amber-500` `#F59E0B` for a closer brightness match. | Optional swap to `#F59E0B` — closest in perceived brightness to current, while being a stock Tailwind amber the app's yellow-status pills approximate. |
-| `--lexi-ok` | `#30a46c` (same in both themes) | citation-check's real "success" dot: `#22C55E` (`green-500`); vault "ready" badge text is `#166534` (`green-800`). | Optional swap to `#16A34A` (`green-600`) — sits between the two app greens and is closer to current `#30a46c`'s slightly muted tone than pure `#22C55E`. |
-| `--lexi-r` | `10px` | App has no single global radius; closest common "card" radius is `rounded-xl` = `12px`; closest "input" radius is `rounded-lg` = `8px`. | Keep `10px` — it already sits neatly between the app's two most common radii and needs no change. |
-| `--lexi-shadow-sm` | `0 1px 2px rgba(20,20,30,.06)` | App's composer resting shadow, first layer: `0 1px 2px rgba(15,23,42,.04)`. | Swap the rgba base from `20,20,30` → `15,23,42` (slate-900) to match the app's ink-tinted shadow language; opacity is already in the right range. |
-| `--lexi-shadow-md` | `0 4px 16px rgba(20,20,30,.1)` (light) / `0 8px 24px rgba(0,0,0,.45)` (dark) | App's composer resting shadow, full two-layer form: `0 1px 2px rgba(15,23,42,.04), 0 12px 34px rgba(15,23,42,.06)`. | Recommended: adopt the full two-layer app shadow verbatim for light mode; keep the dark-mode value as-is (app has no dark elevation reference to derive from). |
-| `--lexi-font` | `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif` | App's real font is licensed/self-hosted "Basier Circle" (cannot be bundled into the extension), falling back to Tailwind's default sans: `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`. | Keep as-is — the extension's stack is already a close, license-safe approximation of the app's own fallback stack (both system-first, same ordering philosophy). No change needed. |
-| `--lexi-mono` | `ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace` | App defines no custom mono stack anywhere. | Keep as-is — nothing to align to. |
-
-### Summary of recommended hex changes (light theme; dark deltas noted inline above)
-
+Recommended token values (reusing the repo's own historical teal ramp, which
+still exists verbatim in git history — nothing invented):
 ```css
 :root {
-  --lexi-text: #0f172a;       /* was #1a1a2e — app's slate-900 */
-  --lexi-muted: #64748b;      /* was #6b6b85 — app's slate-500 */
-  --lexi-accent: #775ad8;     /* was #5b5bd6 — app's primary-600 */
-  --lexi-accent-strong: #6434d5; /* was #4a3aff — app's primary-700 */
-  --lexi-accent-tint: #f6f7fe;   /* was #eeeefb — app's primary-50 */
-  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --lexi-shadow-md: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 34px rgba(15, 23, 42, 0.06);
-  /* --lexi-bg, --lexi-border, --lexi-r, --lexi-font, --lexi-mono, --lexi-risk,
-     --lexi-warn, --lexi-ok: already close enough — optional/no change */
+  --lexi-accent: #045b6c;        /* was #5b5bd6 → do NOT use #775ad8 either */
+  --lexi-accent-strong: #034552; /* historical brand.teal-hover, verbatim */
+  --lexi-accent-tint: #b2dfe5;   /* historical brand.teal-tint, verbatim */
 }
-```
-
-```css
 @media (prefers-color-scheme: dark) {
   :root {
-    --lexi-surface: #232e40;    /* was #1e1e29 — app's brand.navy-light */
-    --lexi-border: #2e3a4d;     /* was #2c2c3b — app's brand.navy-border */
-    --lexi-accent: #aba4ea;     /* was #8b8bf0 — app's primary-400 */
-    --lexi-accent-strong: #c9c8f4; /* was #a5a5f7 — app's primary-300 */
+    /* Lift to the marketing site's brighter teal-green for dark-surface
+       contrast — this exact value is already proven to read cleanly on a
+       near-black background (sampled straight off getlexi.io's own dark
+       hero/section dots, ref-2.png/ref-3.png). */
+    --lexi-accent: #24cda5;
+    --lexi-accent-strong: #1aab88; /* darkened ~15% for a hover/pressed step */
+    --lexi-accent-tint: rgba(36, 205, 165, 0.16);
   }
 }
-/* mirror the same 4 lines into :root[data-theme="dark"] */
+/* mirror into :root[data-theme="dark"] to match the toggle-stamped attribute */
 ```
 
-All of the above are **value-only** changes to existing `--lexi-*` custom
-properties — no id/class renames, no new variables, nothing that the e2e
-suite's DOM selectors depend on.
+**Layout/chrome should still mirror the *real* chat recipe from §2** — flat
+neutral message surfaces, no avatars, no colored bubbles, ink-tinted shadows,
+navy/slate neutrals, `rounded-2xl`/pill radii — teal shows up only where the
+app itself puts brand color: the logo mark and small accent touches (links,
+focus rings, active/selected chip state, the send button if you want a
+branded touch the in-app version currently doesn't have). Don't tint the
+message bubbles or the whole surface teal — the real product doesn't, and
+doing so would make the extension look less like the app, not more.
+
+All of the above are value-only token changes — no id/class renames, nothing
+the e2e suite's DOM selectors (`.lexi-risk-item`, `.lexi-confirm-card`,
+`#mode-agent-btn`, etc.) depend on.

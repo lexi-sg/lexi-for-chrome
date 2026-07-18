@@ -53,9 +53,15 @@ img {
   --lexi-text: #0f172a;
   --lexi-muted: #64748b;
   --lexi-border: #e2e8f0;
-  --lexi-accent: #775ad8;
-  --lexi-accent-strong: #6434d5;
-  --lexi-accent-tint: #f6f7fe;
+  /* Brand teal — the real Lexi accent (logo mark / in-chat GreetingHero /
+     extension icon128), NOT the starter-kit violet. Historical brand.teal
+     ramp, verbatim. */
+  --lexi-accent: #045b6c;
+  --lexi-accent-strong: #034552;
+  --lexi-accent-tint: #b2dfe5;
+  /* Flat neutral user-message surface, mirroring the app chat's
+     bg_color.messagebox (#e7e7e6) — deliberately NOT brand-colored. */
+  --lexi-user-bubble: #e7e7e6;
   --lexi-risk: #dc2626;
   --lexi-warn: #f59e0b;
   --lexi-ok: #16a34a;
@@ -78,9 +84,12 @@ img {
     --lexi-text: #f1f5f9;
     --lexi-muted: #94a3b8;
     --lexi-border: #2e3a4d;
-    --lexi-accent: #aba4ea;
-    --lexi-accent-strong: #c9c8f4;
-    --lexi-accent-tint: rgba(171, 164, 234, 0.14);
+    /* Dark surfaces lift to the marketing site's brighter teal-green, proven
+       to read cleanly on a near-black background. */
+    --lexi-accent: #24cda5;
+    --lexi-accent-strong: #1aab88;
+    --lexi-accent-tint: rgba(36, 205, 165, 0.16);
+    --lexi-user-bubble: #232e40;
     --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
     --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
@@ -93,9 +102,10 @@ img {
   --lexi-text: #0f172a;
   --lexi-muted: #64748b;
   --lexi-border: #e2e8f0;
-  --lexi-accent: #775ad8;
-  --lexi-accent-strong: #6434d5;
-  --lexi-accent-tint: #f6f7fe;
+  --lexi-accent: #045b6c;
+  --lexi-accent-strong: #034552;
+  --lexi-accent-tint: #b2dfe5;
+  --lexi-user-bubble: #e7e7e6;
   --lexi-risk: #dc2626;
   --lexi-warn: #f59e0b;
   --lexi-ok: #16a34a;
@@ -110,9 +120,10 @@ img {
   --lexi-text: #f1f5f9;
   --lexi-muted: #94a3b8;
   --lexi-border: #2e3a4d;
-  --lexi-accent: #aba4ea;
-  --lexi-accent-strong: #c9c8f4;
-  --lexi-accent-tint: rgba(171, 164, 234, 0.14);
+  --lexi-accent: #24cda5;
+  --lexi-accent-strong: #1aab88;
+  --lexi-accent-tint: rgba(36, 205, 165, 0.16);
+  --lexi-user-bubble: #232e40;
   --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
@@ -301,10 +312,10 @@ body {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 14px 12px;
+  padding: 18px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   scroll-behavior: smooth;
 }
 
@@ -313,18 +324,23 @@ body {
   animation: lexi-fade-in 160ms ease;
 }
 
+/* User message: flat neutral bubble, right-aligned, mirroring the app chat's
+   bg_color.messagebox recipe (rounded-2xl, no brand color, no avatar). */
 .lexi-msg-user {
   align-self: flex-end;
-  background: var(--lexi-accent-tint);
+  max-width: 85%;
+  background: var(--lexi-user-bubble);
   color: var(--lexi-text);
-  border-radius: var(--lexi-r);
-  padding: 8px 12px;
+  border-radius: 16px;
+  padding: 10px 14px;
 }
 
+/* Assistant message: no bubble background at all — flat text, left-aligned,
+   small left offset in place of an avatar gutter (app RenderMessage recipe). */
 .lexi-msg-assistant {
   align-self: stretch;
   max-width: 100%;
-  padding: 2px 2px;
+  padding: 0 2px 0 4px;
 }
 
 .lexi-msg-assistant p {
@@ -697,19 +713,24 @@ body {
 .lexi-chip {
   flex: 0 0 auto;
   white-space: nowrap;
-  background: var(--lexi-surface);
+  background: var(--lexi-bg);
   border: 1px solid var(--lexi-border);
-  color: var(--lexi-text);
+  color: var(--lexi-muted);
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 7px 13px;
   font-size: 12px;
-  transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  transition: transform 120ms ease, border-color 120ms ease,
+    background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
+/* Neutral outline pill (app SuggestionChips), with a light branded teal
+   hover/selected state. */
 .lexi-chip:hover {
   transform: translateY(-1px);
   border-color: var(--lexi-accent);
+  color: var(--lexi-accent-strong);
   background: var(--lexi-accent-tint);
+  box-shadow: var(--lexi-shadow-sm);
 }
 
 #quick-actions-more {
@@ -808,15 +829,19 @@ body {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: var(--lexi-surface);
+  background: var(--lexi-bg);
   border: 1px solid var(--lexi-border);
-  border-radius: var(--lexi-r);
-  padding: 6px 6px 6px 12px;
-  transition: border-color 120ms ease;
+  border-radius: 20px;
+  padding: 6px 6px 6px 14px;
+  box-shadow: var(--lexi-shadow-sm);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
+/* App composer affordance: the border/shadow deepen on focus — no visible
+   focus ring. */
 #composer-input-row:focus-within {
   border-color: var(--lexi-accent);
+  box-shadow: var(--lexi-shadow-md);
 }
 
 #prompt-input {
