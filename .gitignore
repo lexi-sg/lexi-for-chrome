@@ -8,4 +8,6 @@ __pycache__/
 
 # Internal working documents (not part of the public project)
 SPEC.json
+REAL_LEXI_SPEC.json
+AUTH_SPEC.json
 research/

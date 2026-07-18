@@ -51,6 +51,17 @@ export const MSG = {
   KEY_VALIDATE: 'KEY_VALIDATE',
   KEY_VALIDATE_RESULT: 'KEY_VALIDATE_RESULT',
 
+  // Account auth (Panel/Options <-> SW; SW <-> connect page via onMessageExternal)
+  SIGN_IN_START: 'SIGN_IN_START', // panel -> SW: mint nonce + open the connect tab
+  SIGN_OUT: 'SIGN_OUT', // panel -> SW: revoke the token, clear account keys
+  GET_SESSION: 'GET_SESSION', // panel/options -> SW: fetch account + usage meter
+  SESSION: 'SESSION', // SW -> panel/options: {account, usage, models} reply
+  AUTH_CHANGED: 'AUTH_CHANGED', // SW -> all panels: auth state changed (sign in/out/expiry)
+  // Type of the external message the lexi-frontend /extension/connect page
+  // sends via chrome.runtime.sendMessage(EXTENSION_ID, ...). MUST match the
+  // literal the connect page posts (see donna-frontend connect.tsx).
+  CONNECT_RECEIVED: 'LEXI_EXTENSION_CONNECT',
+
   // Content-script channel (SW <-> Content script, via tabs.sendMessage)
   CS_EXTRACT: 'CS_EXTRACT',
   CS_PAGE: 'CS_PAGE',
@@ -87,7 +98,47 @@ export const PORT_NAME = 'lexi-sidepanel';
 export const AGENT_MODE_AVAILABLE = true;
 
 // ---------------------------------------------------------------------------
-// Anthropic API endpoints
+// Build channel — selects the Lexi backend + connect-page origins this build
+// talks to. 'prod' points at api.getlexi.io / app.getlexi.io; 'staging' points
+// at the staging hosts. scripts/package.sh / build-lite.mjs may rewrite the
+// single line below for a channel-specific artifact; the source default here is
+// 'staging' so an unpacked dev build talks to staging out of the box.
+// ---------------------------------------------------------------------------
+export const BUILD_CHANNEL = 'staging';
+
+const CHANNELS = {
+  prod: {
+    apiBase: 'https://api.getlexi.io',
+    connectUrl: 'https://app.getlexi.io/extension/connect',
+    connectOrigins: ['https://app.getlexi.io'],
+  },
+  staging: {
+    apiBase: 'https://staging-api.getlexi.io',
+    connectUrl: 'https://staging.getlexi.io/extension/connect',
+    connectOrigins: ['https://staging.getlexi.io'],
+  },
+};
+
+const _channel = CHANNELS[BUILD_CHANNEL] || CHANNELS.staging;
+
+// ---------------------------------------------------------------------------
+// Lexi backend endpoints (account mode). LEXI_API_BASE is the HTTP origin;
+// the product-chat transport and the Anthropic-shaped proxy hang off it.
+// ---------------------------------------------------------------------------
+export const LEXI_API_BASE = _channel.apiBase;
+// The lexi-frontend handoff page the "Sign in with Lexi" button opens.
+export const CONNECT_URL = _channel.connectUrl;
+// Origins onMessageExternal accepts a LEXI_EXTENSION_CONNECT handoff from.
+export const CONNECT_ORIGINS = _channel.connectOrigins;
+// Agent-mode proxy (Anthropic-shaped SSE passthrough) + Chat-mode product pipeline.
+export const EXTENSION_PROXY_PATH = '/api/extension/messages';
+export const CHAT_PATH = '/llm/chat';
+export const SESSION_PATH = '/api/extension/auth/session';
+export const REVOKE_PATH = '/api/extension/auth/revoke';
+
+// ---------------------------------------------------------------------------
+// Anthropic API endpoints — RETAINED for the UI-less BYOK escape hatch (the
+// hermetic Agent-Mode e2e seam). Not part of the shipping login-only UX.
 // ---------------------------------------------------------------------------
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models';
@@ -139,12 +190,25 @@ export const LIMITS = {
 // globals are NOT retained across SW teardown).
 // ---------------------------------------------------------------------------
 export const STORAGE_KEYS = {
+  // Account mode (the shipping login-only path).
+  AUTH_MODE: 'lexi_auth_mode', // 'account' | 'byok' | (unset = signed out)
+  EXTENSION_TOKEN: 'lexi_extension_token', // opaque lexiext_ Bearer token
+  ACCOUNT_INFO: 'lexi_account_info', // {email, first_name, tier, ...} for the chip
+  // BYOK escape hatch — retained UI-less, seeded by the e2e suite (and by any
+  // pre-existing BYOK user). Presence of API_KEY implies BYOK mode when
+  // AUTH_MODE is unset, so the storage-seeding e2e seam keeps working.
   API_KEY: 'lexi_api_key',
   MODEL: 'lexi_model',
   APPROVAL_MODE: 'lexi_approval_mode',
   SITE_GRANTS: 'lexi_site_grants',
   PROVIDER: 'lexi_provider',
 };
+
+// chrome.storage.session key holding the in-flight sign-in nonce (state) minted
+// by SIGN_IN_START and verified by onMessageExternal (replay/CSRF guard). Lives
+// in session storage (TRUSTED_CONTEXTS), never in local, so it clears on browser
+// restart and is unreadable by content scripts.
+export const CONNECT_NONCE_KEY = 'lexi_connect_nonce';
 
 // ---------------------------------------------------------------------------
 // Static site-policy denylist — hard-blocks Agent Mode entirely (chat/see+

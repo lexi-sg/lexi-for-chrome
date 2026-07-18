@@ -20,6 +20,12 @@ import {
   STORAGE_KEYS,
   RISKY_CLASSES,
   AGENT_MODE_AVAILABLE,
+  LEXI_API_BASE,
+  CONNECT_URL,
+  CONNECT_ORIGINS,
+  CONNECT_NONCE_KEY,
+  SESSION_PATH,
+  REVOKE_PATH,
 } from '../config.js';
 import * as permissionManager from './permission-manager.js';
 import {
@@ -197,13 +203,146 @@ async function getSettings() {
     STORAGE_KEYS.MODEL,
     STORAGE_KEYS.APPROVAL_MODE,
     STORAGE_KEYS.PROVIDER,
+    STORAGE_KEYS.AUTH_MODE,
+    STORAGE_KEYS.EXTENSION_TOKEN,
+    STORAGE_KEYS.ACCOUNT_INFO,
   ]);
+  const apiKey = data[STORAGE_KEYS.API_KEY] || null;
+  const token = data[STORAGE_KEYS.EXTENSION_TOKEN] || null;
+
+  // Effective auth mode. Exactly one path is ever selected (no runtime
+  // fallback): an explicit AUTH_MODE wins; otherwise a token means account,
+  // a bare API key means the BYOK escape hatch, and neither means signed out.
+  let authMode = data[STORAGE_KEYS.AUTH_MODE] || null;
+  if (authMode === 'account' && !token) authMode = null;
+  if (!authMode) authMode = token ? 'account' : apiKey ? 'byok' : null;
+
   return {
-    apiKey: data[STORAGE_KEYS.API_KEY] || null,
+    apiKey,
     model: data[STORAGE_KEYS.MODEL] || null,
     approvalMode: data[STORAGE_KEYS.APPROVAL_MODE] || 'manual',
     provider: data[STORAGE_KEYS.PROVIDER] || null,
+    authMode,
+    extensionToken: token,
+    accountInfo: data[STORAGE_KEYS.ACCOUNT_INFO] || null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Account auth — sign-in handoff, sign-out/revoke, session fetch.
+// ---------------------------------------------------------------------------
+
+/**
+ * SIGN_IN_START: mint a single-use nonce into TRUSTED session storage and open
+ * the lexi-frontend connect page in a new tab. The connect page authenticates
+ * the browser's Clerk session and relays a token back via onMessageExternal.
+ */
+async function startSignIn() {
+  const nonce = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random()}`;
+  if (chrome.storage.session) {
+    await chrome.storage.session.set({ [CONNECT_NONCE_KEY]: nonce });
+  }
+  await chrome.tabs.create({ url: `${CONNECT_URL}?state=${encodeURIComponent(nonce)}` });
+  return null; // no reply — the panel waits for the AUTH_CHANGED broadcast
+}
+
+/**
+ * SIGN_OUT: best-effort server revoke (instant kill-switch), then clear the
+ * three account keys locally and broadcast the change. Any stored BYOK key is
+ * left untouched.
+ */
+async function signOut() {
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.EXTENSION_TOKEN);
+  const token = stored[STORAGE_KEYS.EXTENSION_TOKEN];
+  if (token) {
+    try {
+      await fetch(`${LEXI_API_BASE}${REVOKE_PATH}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+    } catch {
+      // Revoke is best-effort; the local clear below still signs the user out.
+    }
+  }
+  await clearAccountKeys();
+  broadcast({ type: MSG.AUTH_CHANGED, signedOut: true });
+  return { type: MSG.AUTH_CHANGED, signedOut: true };
+}
+
+async function clearAccountKeys() {
+  await chrome.storage.local.remove([
+    STORAGE_KEYS.AUTH_MODE,
+    STORAGE_KEYS.EXTENSION_TOKEN,
+    STORAGE_KEYS.ACCOUNT_INFO,
+  ]);
+}
+
+/**
+ * GET_SESSION: fetch the account identity + usage meter for the account chip.
+ * A 401 means the session was revoked/expired: clear it and report `expired`
+ * so the panel shows the re-auth banner (never a silent BYOK fallback).
+ */
+async function getSession() {
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.EXTENSION_TOKEN);
+  const token = stored[STORAGE_KEYS.EXTENSION_TOKEN];
+  if (!token) return { type: MSG.SESSION, ok: false, signedOut: true, error: 'Not signed in.' };
+  try {
+    const res = await fetch(`${LEXI_API_BASE}${SESSION_PATH}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 401) {
+      await clearAccountKeys();
+      broadcast({ type: MSG.AUTH_CHANGED, expired: true });
+      return { type: MSG.SESSION, ok: false, expired: true, error: 'Session expired.' };
+    }
+    if (!res.ok) return { type: MSG.SESSION, ok: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    if (data && data.account) {
+      await chrome.storage.local.set({ [STORAGE_KEYS.ACCOUNT_INFO]: data.account });
+    }
+    return {
+      type: MSG.SESSION,
+      ok: true,
+      account: data.account,
+      usage: data.usage,
+      models: data.models,
+    };
+  } catch (err) {
+    return { type: MSG.SESSION, ok: false, error: (err && err.message) || 'Network error.' };
+  }
+}
+
+/**
+ * Validate an inbound external LEXI_EXTENSION_CONNECT handoff. Pure so the SW
+ * message logic (and tests) can assert the origin + replay-nonce checks.
+ * @returns {boolean} true iff the message may be trusted.
+ */
+function isValidConnectMessage(message, senderOrigin, storedNonce) {
+  if (!message || message.type !== MSG.CONNECT_RECEIVED) return false;
+  if (!senderOrigin || !CONNECT_ORIGINS.includes(senderOrigin)) return false;
+  if (!storedNonce || !message.state || message.state !== storedNonce) return false;
+  if (!message.token) return false;
+  return true;
+}
+
+/** onMessageExternal handler for the connect-page token handoff. */
+async function handleExternalConnect(message, sender) {
+  const senderOrigin = sender && sender.origin;
+  const sessionData = chrome.storage.session
+    ? await chrome.storage.session.get(CONNECT_NONCE_KEY)
+    : {};
+  const storedNonce = sessionData[CONNECT_NONCE_KEY];
+  if (!isValidConnectMessage(message, senderOrigin, storedNonce)) return { ok: false };
+
+  await chrome.storage.local.set({
+    [STORAGE_KEYS.AUTH_MODE]: 'account',
+    [STORAGE_KEYS.EXTENSION_TOKEN]: message.token,
+    [STORAGE_KEYS.ACCOUNT_INFO]: message.account || null,
+  });
+  if (chrome.storage.session) await chrome.storage.session.remove(CONNECT_NONCE_KEY);
+  broadcast({ type: MSG.AUTH_CHANGED, signedIn: true, account: message.account || null });
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +520,15 @@ async function handleMessage(message, senderTabIdHint) {
       return { type: MSG.SETTINGS, ...settings };
     }
 
+    case MSG.SIGN_IN_START:
+      return startSignIn();
+
+    case MSG.SIGN_OUT:
+      return signOut();
+
+    case MSG.GET_SESSION:
+      return getSession();
+
     case MSG.SETTINGS: {
       // Broadcast from options.js after a write — forward to every open panel.
       broadcast(message);
@@ -440,6 +588,8 @@ const REPLY_TYPES = {
   [MSG.REQUEST_AGENT_PERMISSION]: MSG.AGENT_PERMISSION_RESULT,
   [MSG.KEY_VALIDATE]: MSG.KEY_VALIDATE_RESULT,
   [MSG.GET_SETTINGS]: MSG.SETTINGS,
+  [MSG.GET_SESSION]: MSG.SESSION,
+  [MSG.SIGN_OUT]: MSG.AUTH_CHANGED,
 };
 
 function errorReplyFor(message, err) {
@@ -519,6 +669,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then((response) => sendResponse(response))
     .catch((err) => sendResponse({ ok: false, error: (err && err.message) || String(err) }));
   return true; // keep the message channel open for the async sendResponse
+});
+
+// ---------------------------------------------------------------------------
+// chrome.runtime.onMessageExternal — the ONLY cross-origin surface. The
+// lexi-frontend /extension/connect page (gated by manifest
+// externally_connectable) relays the minted account token here. Every message
+// is origin- + replay-nonce-verified in handleExternalConnect before anything
+// is written to storage; a mismatched origin/nonce/type is silently rejected.
+// ---------------------------------------------------------------------------
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  handleExternalConnect(message, sender)
+    .then((response) => sendResponse(response))
+    .catch(() => sendResponse({ ok: false }));
+  return true; // async sendResponse
 });
 
 // ---------------------------------------------------------------------------

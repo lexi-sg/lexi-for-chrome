@@ -77,10 +77,27 @@ export function createRenderer(containerEl) {
     let finalized = false;
     let tokensSavedCount = 0;
 
+    // Product-chat (v2 block-SSE) affordance state. Lazily created so the BYOK
+    // chat/agent path (which only ever calls pushDelta/finalize) is unchanged.
+    let thinkingLine = null; // collapsed "Thinking…" line
+    let thinkingText = '';
+    let toolsWrap = null; // container for compact tool cards
+    const toolCards = new Map(); // tool block id -> card element
+    let statusLine = null; // single self-replacing ephemeral status line
+
     function flush() {
       rafHandle = null;
       renderMarkdown(body, raw);
       scrollToBottom();
+    }
+
+    function ensureToolsWrap() {
+      if (!toolsWrap) {
+        toolsWrap = document.createElement('div');
+        toolsWrap.className = 'lexi-tool-cards';
+        root.insertBefore(toolsWrap, body);
+      }
+      return toolsWrap;
     }
 
     function scheduleFlush() {
@@ -123,11 +140,117 @@ export function createRenderer(containerEl) {
         scrollToBottom();
       },
 
+      // ---- Product-chat (v2 block) affordances -----------------------------
+
+      /** Appends to the collapsed "Thinking…" line (mirrors web ThinkingBlock). */
+      pushThinking(delta) {
+        if (finalized || !delta) return;
+        thinkingText += delta;
+        if (!thinkingLine) {
+          thinkingLine = document.createElement('div');
+          thinkingLine.className = 'lexi-thinking-line';
+          const icon = document.createElement('span');
+          icon.className = 'lexi-thinking-icon';
+          icon.textContent = '◷';
+          const text = document.createElement('span');
+          text.className = 'lexi-thinking-text';
+          thinkingLine.append(icon, text);
+          root.insertBefore(thinkingLine, body);
+        }
+        thinkingLine.querySelector('.lexi-thinking-text').textContent = thinkingText;
+        scrollToBottom();
+      },
+
+      /** Settles the thinking line: clamp to a few lines, dim it. */
+      settleThinking() {
+        if (thinkingLine) thinkingLine.classList.add('lexi-thinking-settled');
+      },
+
+      /** Opens (or updates) a compact tool card keyed by the block's tool id. */
+      openTool(id, name, status = 'running') {
+        const wrap = ensureToolsWrap();
+        let card = toolCards.get(id);
+        if (!card) {
+          card = document.createElement('div');
+          card.className = 'lexi-tool-card';
+          const nameEl = document.createElement('span');
+          nameEl.className = 'lexi-tool-name';
+          const statusEl = document.createElement('span');
+          statusEl.className = 'lexi-tool-status';
+          card.append(nameEl, statusEl);
+          wrap.appendChild(card);
+          toolCards.set(id, card);
+        }
+        card.querySelector('.lexi-tool-name').textContent = prettyToolName(name);
+        card.querySelector('.lexi-tool-status').textContent = status === 'ok' ? 'done' : status;
+        card.classList.toggle('lexi-tool-error', status === 'error');
+        scrollToBottom();
+      },
+
+      /** Finalizes a tool card's status from a block_stop `final` payload. */
+      settleTool(id, status) {
+        const card = toolCards.get(id);
+        if (!card) return;
+        card.querySelector('.lexi-tool-status').textContent = status === 'error' ? 'error' : 'done';
+        card.classList.toggle('lexi-tool-error', status === 'error');
+      },
+
+      /** Renders a "Drafting {title}" artifact card with an Open-in-Lexi link. */
+      openArtifact(title, deepLink) {
+        const wrap = ensureToolsWrap();
+        const card = document.createElement('div');
+        card.className = 'lexi-artifact-card';
+        const label = document.createElement('span');
+        label.className = 'lexi-artifact-label';
+        label.textContent = `Drafting ${title || 'document'}`;
+        card.appendChild(label);
+        if (deepLink && /^https?:\/\//i.test(deepLink)) {
+          const a = document.createElement('a');
+          a.className = 'lexi-artifact-link';
+          a.textContent = 'Open in Lexi';
+          a.href = deepLink;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          card.appendChild(a);
+        }
+        wrap.appendChild(card);
+        scrollToBottom();
+      },
+
+      /** A single self-replacing ephemeral status line under the message. */
+      setStatusLine(message) {
+        if (finalized) return;
+        if (!message) {
+          if (statusLine) {
+            statusLine.remove();
+            statusLine = null;
+          }
+          return;
+        }
+        if (!statusLine) {
+          statusLine = document.createElement('div');
+          statusLine.className = 'lexi-status-line';
+          root.insertBefore(statusLine, caret);
+        }
+        statusLine.textContent = message;
+        scrollToBottom();
+      },
+
+      /** A context-window / warning banner pinned above the message body. */
+      showBanner(message) {
+        if (!message) return;
+        const banner = document.createElement('div');
+        banner.className = 'lexi-context-banner';
+        banner.textContent = message;
+        root.insertBefore(banner, root.firstChild);
+        scrollToBottom();
+      },
+
       /**
        * Ends the stream: cancels any pending rAF flush, does one final
        * synchronous render, removes the caret, and returns the fully
        * rendered root element.
-       * @param {{ notLegalAdviceFooter?: boolean, injectionFlagged?: boolean }} [opts]
+       * @param {{ injectionFlagged?: boolean }} [opts]
        */
       finalize(opts = {}) {
         if (finalized) return root;
@@ -146,11 +269,9 @@ export function createRenderer(containerEl) {
           root.insertBefore(flag, body);
         }
 
-        if (opts.notLegalAdviceFooter !== false && raw.trim()) {
-          const footer = document.createElement('div');
-          footer.className = 'lexi-disclaimer-line';
-          footer.textContent = 'Not legal advice.';
-          root.appendChild(footer);
+        if (statusLine) {
+          statusLine.remove();
+          statusLine = null;
         }
 
         caret.remove();
@@ -169,7 +290,31 @@ export function createRenderer(containerEl) {
     containerEl.scrollTop = containerEl.scrollHeight;
   }
 
-  return { appendUser, startAssistant, appendSystemNote };
+  /**
+   * Renders product-chat follow-up suggestion chips below the log (reuses the
+   * quick-action chip styling). `onPick(question)` fires on click.
+   * @param {string[]} questions
+   * @param {(q:string)=>void} onPick
+   */
+  function appendFollowUps(questions, onPick) {
+    if (!Array.isArray(questions) || !questions.length) return null;
+    const wrap = document.createElement('div');
+    wrap.className = 'lexi-follow-ups';
+    for (const q of questions) {
+      if (!q) continue;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'lexi-chip lexi-follow-up-chip';
+      chip.textContent = q;
+      chip.addEventListener('click', () => onPick && onPick(q));
+      wrap.appendChild(chip);
+    }
+    containerEl.appendChild(wrap);
+    scrollToBottom();
+    return wrap;
+  }
+
+  return { appendUser, startAssistant, appendSystemNote, appendFollowUps };
 }
 
 /**
@@ -177,16 +322,31 @@ export function createRenderer(containerEl) {
  *   pushDelta: (delta: string) => void,
  *   addTokensSaved: (count: number) => void,
  *   appendImage: (dataUrl: string) => void,
- *   finalize: (opts?: { notLegalAdviceFooter?: boolean, injectionFlagged?: boolean }) => HTMLElement,
+ *   pushThinking: (delta: string) => void,
+ *   settleThinking: () => void,
+ *   openTool: (id: string, name: string, status?: string) => void,
+ *   settleTool: (id: string, status: string) => void,
+ *   openArtifact: (title: string, deepLink?: string) => void,
+ *   setStatusLine: (message: string) => void,
+ *   showBanner: (message: string) => void,
+ *   finalize: (opts?: { injectionFlagged?: boolean }) => HTMLElement,
  *   text: string,
  * }} AssistantHandle
  */
+
+/** Human-friendly label for a product tool name (e.g. "vault_search"). */
+function prettyToolName(name) {
+  if (!name) return 'Working';
+  return String(name)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 function renderTokensSavedSlot(root, count) {
   let slot = root.querySelector('.lexi-tokens-saved');
   if (!slot) {
     slot = document.createElement('div');
-    slot.className = 'lexi-tokens-saved lexi-disclaimer-line';
+    slot.className = 'lexi-tokens-saved';
     root.appendChild(slot);
   }
   slot.textContent = `~${count.toLocaleString()} tokens saved by trimming older screenshots.`;

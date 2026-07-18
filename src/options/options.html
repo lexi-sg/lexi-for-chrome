@@ -467,17 +467,53 @@
 
   <main class="card-col">
     <!-- ==================================================================
-         ONBOARDING (shown first-run, i.e. whenever no API key is stored
-         yet). Once a valid key is saved this collapses and a compact
-         "key saved" summary row appears at the top of #settings instead,
-         with a "Change key" action that re-opens this section.
+         ACCOUNT (primary — the login-only path). Shows the signed-in
+         identity, plan/tier, and usage meter (the SAME number the backend
+         enforces against), plus Manage-account + Sign out. When signed out
+         it collapses to a single "Sign in with Lexi" button.
          ================================================================== -->
-    <section id="onboarding" class="card">
-      <h1>Add your Anthropic API key</h1>
+    <section id="account-section" class="card">
+      <h1>Your Lexi account</h1>
+
+      <div id="account-signed-out">
+        <p class="muted">
+          Sign in with your Lexi account to use Lexi on every page — the same
+          chat, tools, and vault you use in the web app.
+        </p>
+        <button id="account-signin-btn" type="button" class="btn btn-accent">
+          Sign in with Lexi
+        </button>
+      </div>
+
+      <div id="account-signed-in" hidden>
+        <div class="key-summary-row">
+          <span class="muted small">Signed in as <strong id="account-email-text">—</strong></span>
+          <button id="account-signout-btn" type="button" class="btn btn-muted btn-small">Sign out</button>
+        </div>
+        <div class="field-row">
+          <span class="muted small">Plan</span>
+          <span id="account-tier-text" class="small">—</span>
+        </div>
+        <div class="field-row">
+          <span class="muted small">Usage</span>
+          <span id="account-usage-text" class="small">—</span>
+        </div>
+        <p class="muted small">
+          <a id="account-manage-link" href="#" target="_blank" rel="noopener noreferrer">Manage account</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         ADVANCED: BRING YOUR OWN KEY (escape hatch). Hidden by default;
+         only surfaced when a key is already stored on this device (or via
+         the "Change key" action). New users never see this.
+         ================================================================== -->
+    <section id="onboarding" class="card is-hidden">
+      <h1>Advanced: bring your own key</h1>
       <p class="muted">
-        Lexi is bring-your-own-key: there is no Lexi account and no Lexi
-        server. Your key is stored only on this device and is used to call
-        Anthropic's API directly.
+        Optional developer path — call Anthropic directly with your own key.
+        The key is stored only on this device.
       </p>
 
       <label for="api-key-input">Anthropic API key</label>
@@ -606,11 +642,12 @@
     <section id="disclosures" class="card disclosure-card">
       <h2>What data is sent, and to whom</h2>
       <p>
-        When you ask a question, the page's text &mdash; and, only if you
-        use <strong>Screenshot &amp; ask</strong>, an image of the page
-        &mdash; are sent to Anthropic's API using your own key. No Lexi or
-        third-party server is involved; Lexi has no backend and no account
-        system.
+        When you ask a question, your question and the page content you
+        choose to include &mdash; and, if you use
+        <strong>Screenshot &amp; ask</strong>, an image of the page &mdash;
+        are sent to Lexi's backend, applied to your account limits, and
+        forwarded to the model provider. Only per-request usage-metering rows
+        are logged; your content is never sold or used for training.
       </p>
       <p>
         Agent Mode (letting Lexi click and type on your behalf) is off by
@@ -620,14 +657,8 @@
         &mdash; submitting a form, navigating to a new site, paying,
         sending a message, uploading, downloading, or deleting.
       </p>
-      <p class="muted small">
-        Lexi is not a law firm and does not provide legal advice. Its
-        output is informational only.
-      </p>
     </section>
   </main>
-
-  <footer class="page-footer">Built by Lexi &mdash; getlexi.io &middot; Not legal advice.</footer>
 </div>
 
 <script type="module" src="options.js"></script>

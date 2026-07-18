@@ -7,7 +7,14 @@
 //
 // ES module (loaded via <script type="module">) — safe to use import/export.
 
-import { MSG, MODELS, DEFAULT_MODEL, STORAGE_KEYS, AGENT_MODE_AVAILABLE } from '../config.js';
+import {
+  MSG,
+  MODELS,
+  DEFAULT_MODEL,
+  STORAGE_KEYS,
+  AGENT_MODE_AVAILABLE,
+  CONNECT_ORIGINS,
+} from '../config.js';
 import { nanoAvailability } from '../agent/gemini-nano.js';
 
 const ALL_STORAGE_KEYS = Object.values(STORAGE_KEYS);
@@ -16,6 +23,16 @@ const ALL_STORAGE_KEYS = Object.values(STORAGE_KEYS);
 // DOM refs
 // ---------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
+
+// Account section
+const accountSignedOut = $('account-signed-out');
+const accountSignedIn = $('account-signed-in');
+const accountSigninBtn = $('account-signin-btn');
+const accountSignoutBtn = $('account-signout-btn');
+const accountEmailText = $('account-email-text');
+const accountTierText = $('account-tier-text');
+const accountUsageText = $('account-usage-text');
+const accountManageLink = $('account-manage-link');
 
 const onboardingSection = $('onboarding');
 const apiKeyInput = $('api-key-input');
@@ -43,6 +60,7 @@ async function init() {
   populateModelSelect();
   wireEvents();
   await loadSettings();
+  await refreshAccount();
   await refreshNanoRow();
 }
 
@@ -75,6 +93,11 @@ function populateModelSelect() {
 }
 
 function wireEvents() {
+  accountSigninBtn?.addEventListener('click', onAccountSignInClick);
+  accountSignoutBtn?.addEventListener('click', onAccountSignOutClick);
+  if (accountManageLink) {
+    accountManageLink.href = `${(CONNECT_ORIGINS && CONNECT_ORIGINS[0]) || ''}/account`;
+  }
   validateBtn.addEventListener('click', onValidateClick);
   changeKeyBtn.addEventListener('click', onChangeKeyClick);
   modelSelect.addEventListener('change', onModelChange);
@@ -93,6 +116,21 @@ function wireEvents() {
       onValidateClick();
     }
   });
+
+  // Sign-in completes in another tab (the connect handoff), so re-render the
+  // account section when the auth keys change under us.
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (
+        changes[STORAGE_KEYS.EXTENSION_TOKEN] ||
+        changes[STORAGE_KEYS.AUTH_MODE] ||
+        changes[STORAGE_KEYS.ACCOUNT_INFO]
+      ) {
+        refreshAccount();
+      }
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +143,10 @@ async function loadSettings() {
     typeof stored[STORAGE_KEYS.API_KEY] === 'string' &&
     stored[STORAGE_KEYS.API_KEY].length > 0;
 
-  setOnboardingVisible(!hasKey);
+  // Login-only UX: the BYOK onboarding card is the escape hatch, never shown
+  // to new users. It is reachable only via "Change key" (the summary row,
+  // which only appears when a key is already stored on this device).
+  setOnboardingVisible(false);
   updateKeySummary(hasKey);
 
   modelSelect.value = stored[STORAGE_KEYS.MODEL] || DEFAULT_MODEL;
@@ -187,6 +228,58 @@ async function onValidateClick() {
 
 function onChangeKeyClick() {
   setOnboardingVisible(true);
+}
+
+// ---------------------------------------------------------------------------
+// Account section (login-only primary path)
+// ---------------------------------------------------------------------------
+
+/** Fetch the session via the SW and render signed-in / signed-out state. */
+async function refreshAccount() {
+  let session = null;
+  try {
+    session = await chrome.runtime.sendMessage({ type: MSG.GET_SESSION });
+  } catch {
+    session = null;
+  }
+  renderAccount(session);
+}
+
+function renderAccount(session) {
+  const signedIn = !!(session && session.ok);
+  if (accountSignedOut) accountSignedOut.hidden = signedIn;
+  if (accountSignedIn) accountSignedIn.hidden = !signedIn;
+  if (!signedIn) return;
+
+  const account = session.account || {};
+  if (accountEmailText) accountEmailText.textContent = account.email || 'Signed in';
+  if (accountTierText) accountTierText.textContent = account.tier || '—';
+  if (accountUsageText) accountUsageText.textContent = formatUsage(session.usage);
+}
+
+function formatUsage(usage) {
+  if (!usage) return '—';
+  const used = usage.used ?? 0;
+  const period = usage.period || 'month';
+  if (usage.limit === null || usage.limit === undefined) return `${used} used this ${period}`;
+  return `${used} / ${usage.limit} this ${period}`;
+}
+
+async function onAccountSignInClick() {
+  try {
+    await chrome.runtime.sendMessage({ type: MSG.SIGN_IN_START });
+  } catch {
+    // SW may be asleep; the message wakes it. No inline error needed here.
+  }
+}
+
+async function onAccountSignOutClick() {
+  try {
+    await chrome.runtime.sendMessage({ type: MSG.SIGN_OUT });
+  } catch {
+    // Best-effort — the SW clears the keys and broadcasts AUTH_CHANGED.
+  }
+  await refreshAccount();
 }
 
 // ---------------------------------------------------------------------------

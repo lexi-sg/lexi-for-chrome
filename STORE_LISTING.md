@@ -12,11 +12,12 @@ We ship the same product in two build tracks. Submit them in this order:
 
 1. **Submit the LITE build first** — `dist/lexi-for-chrome-lite-1.0.0.zip`
    (built by `node scripts/build-lite.mjs`). This is the **chat-only** variant:
-   the "see + answer" product (explain clauses, flag risky terms, dates,
-   summaries, Screenshot & ask) with **Agent Mode compiled out**. Its manifest
-   declares **no `debugger`, `tabs`, or `<all_urls>` optional permissions** at
-   all, so it stays in the Chrome Web Store's **fast automated-review lane**.
-   Get the core product live and in users' hands quickly.
+   sign in with your Lexi account and get the "see + answer" product (explain
+   clauses, flag risky terms, dates, summaries, Screenshot & ask) with **Agent
+   Mode compiled out**. Its manifest declares **no `debugger`, `tabs`, or
+   `<all_urls>` optional permissions** at all, so it stays in the Chrome Web
+   Store's **fast automated-review lane**. Get the core product live and in
+   users' hands quickly.
 
 2. **Then submit the FULL build as a version update** —
    `dist/lexi-for-chrome-1.0.0.zip` (built by `scripts/package.sh`). This adds
@@ -25,10 +26,11 @@ We ship the same product in two build tracks. Submit them in this order:
    **manual review** because of `debugger`; the per-permission justifications
    further down this file are written for exactly that review.
 
-Both builds share one codebase. The only differences in the lite build are a
-baked `AGENT_MODE_AVAILABLE = false` flag (which removes every agent-mode entry
-point) and the trimmed manifest — the store title, description, and all listing
-copy below apply verbatim to both. Which ZIP is which:
+Both builds share one codebase and the same signed-in account model. The
+only differences in the lite build are a baked `AGENT_MODE_AVAILABLE = false`
+flag (which removes every agent-mode entry point) and the trimmed manifest —
+the store title, description, and all listing copy below apply verbatim to
+both. Which ZIP is which:
 
 | ZIP | Build command | Agent Mode | Optional permissions | Review lane |
 |---|---|---|---|---|
@@ -39,10 +41,11 @@ copy below apply verbatim to both. Which ZIP is which:
 
 ## Single purpose statement
 
-> Lexi is an AI legal assistant for the web: it reads the legal document or
-> page you're viewing and answers your questions about it (explain a clause,
-> flag risky terms, extract dates, summarize a judgment) using your own
-> Anthropic API key.
+> Lexi for Chrome is the Lexi you already use at work, now in a browser side
+> panel. Sign in with your Lexi account and ask about the legal document or
+> page you're viewing — explain a clause, flag risky terms, extract dates,
+> summarize a judgment — answered by the same product pipeline that powers
+> the Lexi web app, not a separate tool.
 
 ---
 
@@ -56,16 +59,21 @@ Productivity
 
 ## Short description (CWS "Summary", 132-char limit)
 
-> AI legal co-pilot in your side panel — explain clauses, flag risky terms,
-> summarize judgments. Grounded, private. Not legal advice.
+> Sign in with your Lexi account for AI legal review, drafting & chat on any
+> page — the same Lexi, everywhere you work.
 
 ## Detailed description
 
-> Lexi is the AI operating system for law, in your Chrome side panel —
-> covering legal review, contract analysis, and legal drafting for
-> whatever legal document you're looking at: a contract sent as a Google
-> Doc, a scroll-forever Terms of Service, a lease, an NDA, a court
-> judgment, or an e-filing form.
+> Lexi for Chrome is the Lexi you already use at work — now living in your
+> browser side panel, on whatever legal document you have open: a contract
+> sent as a Google Doc, a scroll-forever Terms of Service, a lease, an NDA, a
+> court judgment, or an e-filing form.
+>
+> **SIGN IN, THEN GO:** one click — "Sign in with Lexi" — hands the panel a
+> secure session from your existing Lexi account. No API key to find, paste,
+> or manage. Your questions run through the same chat pipeline as the Lexi
+> web app, and every conversation you start here shows up in your Lexi chat
+> history too — pick a thread up on your laptop, finish it from the panel.
 >
 > **WHAT IT DOES (see + answer):**
 > - **Explain this clause** — plain-English, jurisdiction-neutral, jargon
@@ -81,24 +89,24 @@ Productivity
 > - **Screenshot & ask** — capture a chart, table, or signature block and
 >   ask about it.
 >
-> **PRIVATE BY DESIGN:** Lexi has no server of its own. The page content
-> you ask about goes directly to the AI provider and nowhere else — never
-> to Lexi, never to any third party. (Setup note: today that means adding
-> your own Anthropic (Claude) API key in the options page; pick your model
-> — Sonnet 5 by default, Opus 4.8 or Fable 5 for heavy analysis, Haiku 4.5
-> for speed.)
+> **GROUNDED BY DESIGN:** the page's extracted text — and, only if you use
+> Screenshot & ask, an image of the page — goes to your Lexi account's
+> backend to generate the answer, the same way it would if you pasted that
+> text into the Lexi web app. It is never sold and never used to train
+> models on your data.
 >
 > **OPTIONAL AGENT MODE:** for power users, Lexi can also take actions in
 > the browser (click, type, fill forms) to help with tasks like completing
 > a filing. This is OFF by default, must be enabled per-site, shows a clear
 > "Lexi is acting" indicator plus Chrome's own debugging banner, and always
 > asks before anything risky (submitting a form, navigating away, sending a
-> message). It will never enter passwords or make payments.
+> message). It will never enter passwords or make payments. Model access
+> for Agent Mode follows your Lexi plan's tier, same as the rest of the
+> product.
 >
-> **PRIVACY:** When you ask a question, the page's text — and, only if you
-> use Screenshot & ask, an image of the page — are sent to Anthropic's API
-> using your key. Nothing goes to Lexi or any third party. Your API key is
-> stored locally on your device only.
+> **USAGE:** your extension usage counts against the same plan limits as
+> your Lexi web app account — there's no separate free trial to unlock by
+> installing the extension, and no separate bill either.
 >
 > Lexi is built by the team at getlexi.io. Lexi is not a law firm and does
 > not provide legal advice; its output is informational only.
@@ -115,40 +123,51 @@ flagging · Claude · BYOK · side panel · legal document analysis
 ## Guardrail-integrity statement (CWS Aug-1-2026 rule)
 
 Lexi does not claim, imply, or attempt to bypass, jailbreak, or circumvent
-the safety guardrails of any AI service (including Anthropic's). All model
-calls go through Anthropic's standard, documented Messages API using the
-user's own credentials and standard request parameters. Agent Mode's
-confirmation gates and hard-blocked action list (below) are *additional*
-restrictions layered on top of the underlying model's own behavior, never a
-workaround of it.
+the safety guardrails of any AI service. Chat-mode requests run through
+Lexi's own backend using the same product pipeline and provider agreements
+as the Lexi web app; Agent Mode calls a dedicated Lexi-operated relay that
+forwards to the underlying model provider's standard, documented API. In
+both cases the account making the call is Lexi's own, gated by your signed-in
+session and plan tier — never a workaround of, or a change to, the
+underlying model's own behavior. Agent Mode's confirmation gates and
+hard-blocked action list (below) are *additional* restrictions layered on
+top.
 
 ---
 
 ## Data disclosure (prominent, user-facing — also shown in-product on the
-## options/onboarding page)
+## sign-in/onboarding page)
 
 > **What data is sent, when, and to whom.**
 >
-> When you ask Lexi a question, the current page's extracted text — and,
-> only if you use the "Screenshot & ask" action, a downscaled image of the
-> page — is sent directly to Anthropic's API (`api.anthropic.com`) using
-> **your own** API key. No Lexi-operated server or any other third party
-> ever receives this data; there is no Lexi backend in this product at all.
+> Lexi for Chrome requires signing in with your Lexi account (the same
+> account you'd use at app.getlexi.io). Once signed in:
 >
-> If you enable the optional Agent Mode on a specific site, the same
-> perception data (page text, the interactive-element index, and
-> occasionally a screenshot) is sent to Anthropic to decide what action to
-> take next; the action itself (a click, a keystroke, a scroll) is executed
-> locally in your browser and never leaves your machine.
+> - When you ask Lexi a question, the current page's extracted text — and,
+>   only if you use the "Screenshot & ask" action, a downscaled image of the
+>   page — is sent to Lexi's backend under your account. Lexi's backend runs
+>   the same pipeline that powers the Lexi web app and forwards the
+>   necessary model calls to our AI providers to generate the answer.
+> - Conversations you start in the extension are saved to your Lexi account
+>   — the same chat history the web app shows — so they carry over between
+>   the two. This is intentional: it's the same Lexi, not a separate,
+>   disposable tool.
+> - If you enable the optional Agent Mode on a specific site, the same kind
+>   of perception data (page text, the interactive-element index, and
+>   occasionally a screenshot) is sent through Lexi's backend to decide what
+>   action to take next; the action itself (a click, a keystroke, a scroll)
+>   is executed locally in your browser and never leaves your machine.
 >
-> Your API key, model preference, approval-mode setting, and per-site Agent
-> Mode grants are stored only in `chrome.storage.local` on your device.
-> Nothing is synced to a Lexi account (there is no Lexi account) and
-> nothing is sent anywhere except the direct-to-Anthropic calls described
-> above.
+> Your signed-in session is a single-purpose, revocable extension token —
+> not your password — stored only in `chrome.storage.local` on your device.
+> You can end it any time from the panel ("Sign out") or remotely from
+> app.getlexi.io/account ("Connected extensions"); either kills the session
+> instantly.
 >
-> Lexi collects no analytics, no telemetry, and no usage tracking of any
-> kind.
+> Lexi does not run third-party analytics, ad-tech, or tracking SDKs. Using
+> the extension records the same account-level usage (turns/tokens used
+> against your plan) the web app already meters — visible to you in the
+> panel's account chip — never sold, never used to train models.
 
 ---
 
@@ -213,20 +232,22 @@ justification fields.
 > to read the page the user asked about. Never injected in the background.
 
 **`storage`**
-> Stores the user's own Anthropic API key (`chrome.storage.local` with
-> `setAccessLevel TRUSTED_CONTEXTS` so content scripts can never read it),
-> model preference, per-site agent-mode grants, and approval mode. Nothing
-> is sent to any Lexi/third-party server.
+> Stores the user's signed-in Lexi session token (`chrome.storage.local`
+> with `setAccessLevel TRUSTED_CONTEXTS` so content scripts can never read
+> it), account info, model/approval-mode preferences, and per-site
+> agent-mode grants. Nothing is sent anywhere except to Lexi's own backend
+> under that account.
 
 **`alarms`**
 > A 30s keepalive ping so the service worker survives a multi-step agent
 > task; also powers optional scheduled re-checks. No background network
 > activity.
 
-**Host permission `https://api.anthropic.com/*`**
-> Sends the user's own API key + the page content they asked about directly
-> to Anthropic's API to generate the answer. No intermediary server.
-> Disclosed prominently in-product and in the listing.
+**Host permission `https://api.getlexi.io/*`**
+> Sends the signed-in user's page content (and, for Screenshot & ask, a
+> screenshot) plus their Lexi session token to Lexi's own backend, which
+> runs the same product pipeline as the Lexi web app to generate the
+> answer and to relay Agent Mode's model calls.
 
 ### Optional permissions (requested just-in-time, never at install)
 
@@ -249,17 +270,25 @@ justification fields.
 > agent actions on a site outside `activeTab` scope, so the agent can act
 > across a multi-page legal portal flow the user initiated.
 
+### Cross-origin messaging
+
+**`externally_connectable` → `https://app.getlexi.io/extension/connect`**
+> Lets the one-click "Sign in with Lexi" flow hand the extension a session
+> token from a page the user opened themselves on their own Lexi account
+> (app.getlexi.io) — no copy/pasting of credentials, no third-party site
+> can reach this channel.
+
 ---
 
 ## Privacy Practices tab — quick-answer checklist
 
 | CWS question | Answer |
 |---|---|
-| Does this item collect or use personal data? | No personal data is collected by Lexi. Page content and screenshots the user chooses to analyze are sent directly to Anthropic (a third-party AI provider) under the user's own API key; Lexi itself has no server and stores nothing about the user remotely. |
-| Is data sold to third parties? | No. There is no data collection to sell. |
-| Is data used for purposes unrelated to the item's core functionality? | No. The only data leaving the device (page text/screenshots, sent to Anthropic) is used exclusively to answer the user's question or perform the user-requested agent action. |
+| Does this item collect or use personal data? | Yes. Signing in shares your Lexi account identity (email) with the extension, and the page content/screenshots you choose to ask about are sent to Lexi's own backend under that account to generate answers or drive an agent action you requested. |
+| Is data sold to third parties? | No. |
+| Is data used for purposes unrelated to the item's core functionality? | No. Page content/screenshots are used only to answer the user's question or perform the user-requested agent action; account usage is recorded only to enforce the user's existing plan limits. Never sold, never used to train models. |
 | Is data used to determine creditworthiness or for lending purposes? | No. |
-| Certify compliance with the Developer Program Policies | Yes — no remote code execution beyond the declared Anthropic API host, no obfuscated code, single narrow purpose, minimal permissions requested (optional ones just-in-time), no guardrail-bypass claims. |
+| Certify compliance with the Developer Program Policies | Yes — no remote code execution beyond the declared Lexi/Anthropic API hosts, no obfuscated code, single narrow purpose, minimal permissions requested (optional ones just-in-time), no guardrail-bypass claims. |
 
 ---
 
@@ -269,4 +298,6 @@ justification fields.
 - Privacy policy: see [`PRIVACY.md`](./PRIVACY.md) in this repository (link
   to its hosted/raw URL from the Developer Dashboard's Privacy Policy URL
   field once published).
+- Manage or revoke a signed-in extension any time: app.getlexi.io/account →
+  "Connected extensions."
 - Support contact: via getlexi.io.

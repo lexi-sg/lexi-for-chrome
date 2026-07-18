@@ -14,7 +14,6 @@ import { buildAgentSystem, wrapUntrusted, sanitize, scrubOutbound } from '../pro
 
 const MAX_SCREENSHOTS_KEPT = 3;
 const VISUAL_TASK_RE = /screenshot|image|photo|scan(?:ned)?|chart|diagram|signature|logo|picture|graphic|exhibit/i;
-const NOT_LEGAL_ADVICE_FOOTER = '\n\n_Not legal advice — verify anything important with a qualified professional._';
 // Rough char-per-token heuristic (~4 chars/token) used only to decide when
 // the running conversation needs its oldest tool turns trimmed.
 const MAX_INPUT_CHARS = LIMITS.MAX_TOKENS_INPUT_CHARS || 180000 * 4;
@@ -40,12 +39,17 @@ const MAX_INPUT_CHARS = LIMITS.MAX_TOKENS_INPUT_CHARS || 180000 * 4;
  *   {type:'sw_event', raw}                         - passthrough of an
  *        unsolicited AGENT_STATUS/AGENT_ACTING message from the service worker
  */
-export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey, onEvent }) {
+export function createAgentRun({ port, tabId, task, model, approvalMode, auth, apiKey, onEvent }) {
+  // Auth descriptor for the transport: {mode:'account',token,baseUrl} routes
+  // through the landed proxy; {mode:'byok',apiKey} hits api.anthropic.com
+  // directly (escape hatch). A bare apiKey is accepted for backwards compat.
+  const resolvedAuth = auth || (apiKey ? { mode: 'byok', apiKey } : null);
   const run = {
     tabId,
     task,
     model: model || DEFAULT_MODEL,
     approvalMode: approvalMode || 'manual',
+    auth: resolvedAuth,
     messages: [],
     step: 0,
     maxSteps: LIMITS.MAX_STEPS,
@@ -404,7 +408,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
 
     try {
       for await (const evt of streamMessage({
-        apiKey,
+        auth: run.auth,
         model: run.model,
         system: buildAgentSystem(),
         messages: run.messages,
@@ -497,8 +501,18 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
     if (err && err.name === 'AbortError') {
       return { finished: true, answer: '' };
     }
-    if (err instanceof AuthError || err instanceof ForbiddenError) {
-      // Fatal — the key itself is the problem. Never retry.
+    if (err instanceof AuthError) {
+      // Fatal. In account mode a 401 means the Lexi session ended — surface a
+      // distinct re-sign-in error (never a "bad key" message, and never a
+      // silent fall back to a stored BYOK key). In BYOK mode it's a bad key.
+      const error = serializeError(err);
+      if (run.auth && run.auth.mode === 'account') error.type = 'SessionExpiredError';
+      emit({ type: 'status', status: 'error', error });
+      run.stopped = true;
+      return { finished: true, answer: '' };
+    }
+    if (err instanceof ForbiddenError) {
+      // Fatal — the account/key lacks access to this model. Never retry.
       emit({ type: 'status', status: 'error', error: serializeError(err) });
       run.stopped = true;
       return { finished: true, answer: '' };
@@ -528,10 +542,10 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
     const finishCall = toolUses.find((t) => t.name === 'finish');
     if (finishCall) {
       // The finish tool carries the answer as tool *input* — it was never
-      // streamed as 'text' deltas, so stream it now (plus the footer) so the
-      // panel actually renders it. scrubOutbound is detection-only; use .text.
+      // streamed as 'text' deltas, so stream it now so the panel renders it.
+      // scrubOutbound is detection-only; use .text.
       const scrub = scrubOutbound(((finishCall.input && finishCall.input.answer) || '').trim());
-      const finalAnswer = scrub.text + NOT_LEGAL_ADVICE_FOOTER;
+      const finalAnswer = scrub.text;
       emit({ type: 'text', delta: finalAnswer });
       emit({ type: 'status', status: 'done', answer: finalAnswer, injectionFlagged: scrub.flagged });
       run.stopped = true;
@@ -604,7 +618,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
     abortController = new AbortController();
     try {
       for await (const evt of streamMessage({
-        apiKey,
+        auth: run.auth,
         model: FIND_MODEL,
         system: 'You are a precise UI element locator. Respond with only a ref like e12, or the word "none". No other text.',
         messages: [{ role: 'user', content: prompt }],

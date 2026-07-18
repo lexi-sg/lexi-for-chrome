@@ -18,6 +18,8 @@ import {
   LIMITS,
   STORAGE_KEYS,
   AGENT_MODE_AVAILABLE,
+  LEXI_API_BASE,
+  CONNECT_ORIGINS,
 } from '../config.js';
 import { streamMessage, imageBlock } from '../agent/anthropic-client.js';
 import { TOOLS, SEE_ONLY_TOOLS } from '../agent/tools.js';
@@ -32,6 +34,7 @@ import {
 import { QUICK_ACTIONS, SECONDARY } from '../prompts/quick-action-templates.js';
 import { isAgentEnabled } from '../background/permission-manager.js';
 import { createRenderer } from './chat-render.js';
+import { streamProductChat } from './product-chat-client.js';
 
 // ---------------------------------------------------------------------------
 // DOM handles
@@ -46,7 +49,19 @@ const el = {
   contextToggle: document.getElementById('context-toggle'),
   contextToggleLabel: document.getElementById('context-toggle-label'),
   keyBanner: document.getElementById('key-banner'),
+  keyBannerText: document.getElementById('key-banner-text'),
   keyBannerBtn: document.getElementById('key-banner-btn'),
+  // Account chip + sign-in screen
+  accountChip: document.getElementById('account-chip'),
+  accountChipBtn: document.getElementById('account-chip-btn'),
+  accountAvatar: document.getElementById('account-avatar'),
+  accountEmail: document.getElementById('account-email'),
+  accountMenu: document.getElementById('account-menu'),
+  accountUsage: document.getElementById('account-usage'),
+  accountSignoutBtn: document.getElementById('account-signout-btn'),
+  signinScreen: document.getElementById('signin-screen'),
+  signinBtn: document.getElementById('signin-btn'),
+  signinWaiting: document.getElementById('signin-waiting'),
   messages: document.getElementById('messages'),
   confirmTemplate: document.getElementById('confirm-card-template'),
   actingBar: document.getElementById('acting-bar'),
@@ -85,9 +100,13 @@ let settings = {
   model: DEFAULT_MODEL,
   approvalMode: 'manual',
   provider: 'anthropic',
+  authMode: null, // 'account' | 'byok' | null (signed out)
+  extensionToken: null,
+  accountInfo: null,
 };
 let nanoAvailable = false;
-let onboardingPromptShown = false;
+/** True once a session-expiry re-auth is being shown; blocks sending. */
+let sessionExpired = false;
 
 /** The tab Lexi is currently reading (may be a Playwright ?testTabId fixture). */
 let currentTab = null;
@@ -100,6 +119,9 @@ let currentMode = 'chat';
 let chatConversation = [];
 let chatAbortController = null;
 let chatRunActive = false;
+
+/** Product-chat (account mode) conversation id, adopted from stream_start. */
+let productConversationId = 0;
 
 /** Agent-mode run handle from createAgentRun(). */
 let agentRun = null;
@@ -214,6 +236,24 @@ function handlePortMessage(msg) {
     }
   }
 
+  if (msg.type === MSG.AUTH_CHANGED) {
+    // The SW broadcasts this on sign-in / sign-out / session-expiry. Re-pull
+    // the resolved settings and re-render the account UI.
+    requestSettings()
+      .then((s) => {
+        applySettings(s.settings || s);
+        if (msg.signedIn) {
+          sessionExpired = false;
+          hideSigninScreen();
+          refreshAccountChip();
+        } else if (msg.signedOut || msg.expired) {
+          onAuthLost(!!msg.expired);
+        }
+      })
+      .catch(() => {});
+    return;
+  }
+
   if (msg.type === MSG.CONFIRM_REQUIRED) {
     renderConfirmCard(msg);
     return;
@@ -264,6 +304,16 @@ function requestSettings() {
   return waitForPortMessage(MSG.SETTINGS);
 }
 
+function requestSession() {
+  port?.postMessage({ type: MSG.GET_SESSION });
+  return waitForPortMessage(MSG.SESSION);
+}
+
+function requestSignOut() {
+  port?.postMessage({ type: MSG.SIGN_OUT });
+  return waitForPortMessage(MSG.AUTH_CHANGED, { timeoutMs: 10000 }).catch(() => null);
+}
+
 function requestAgentPermission(origin) {
   port?.postMessage({ type: MSG.REQUEST_AGENT_PERMISSION, origin });
   return waitForPortMessage(MSG.AGENT_PERMISSION_RESULT);
@@ -290,16 +340,140 @@ function execTool(toolUseId, toolName, input, tabId) {
 function applySettings(next) {
   settings = { ...settings, ...next };
   el.modelPicker.value = settings.model || DEFAULT_MODEL;
-  refreshKeyBanner();
+  refreshAuthUI();
 }
 
-function refreshKeyBanner() {
-  const hasKey = Boolean(settings.apiKey);
-  el.keyBanner.hidden = hasKey || nanoAvailable;
-  if (!hasKey && !nanoAvailable && !onboardingPromptShown) {
-    onboardingPromptShown = true;
-    chrome.runtime.openOptionsPage();
+/** Is the user able to send at all (signed in, or a keyless nano fallback)? */
+function isAuthenticated() {
+  if (settings.authMode === 'account' && settings.extensionToken) return true;
+  if (settings.authMode === 'byok' && settings.apiKey) return true;
+  return false;
+}
+
+/**
+ * Reconcile the top-level auth surfaces from `settings`:
+ *   - signed out  -> full-panel "Sign in with Lexi" screen
+ *   - account     -> account chip pinned top
+ *   - byok        -> neither (legacy escape-hatch path stays invisible)
+ */
+function refreshAuthUI() {
+  const signedIn = isAuthenticated();
+  const account = settings.authMode === 'account';
+
+  // First-run sign-in screen: shown only when NOT authenticated and no keyless
+  // nano fallback is available.
+  const showSignin = !signedIn && !nanoAvailable && !sessionExpired;
+  if (el.signinScreen) el.signinScreen.hidden = !showSignin;
+
+  // Account chip only in account mode.
+  if (el.accountChip) el.accountChip.hidden = !account;
+  if (account) refreshAccountChip();
+
+  // The re-auth banner is driven separately by the session-expiry flow.
+  if (!sessionExpired && el.keyBanner) el.keyBanner.hidden = true;
+}
+
+function hideSigninScreen() {
+  if (el.signinScreen) el.signinScreen.hidden = true;
+  if (el.signinWaiting) el.signinWaiting.hidden = true;
+}
+
+/** Populate the account chip (email + initials) and its usage meter. */
+function refreshAccountChip() {
+  const info = settings.accountInfo || {};
+  const email = info.email || 'Signed in';
+  if (el.accountEmail) el.accountEmail.textContent = email;
+  if (el.accountAvatar) el.accountAvatar.textContent = initialsFor(info);
+  // Refresh the live usage meter from the server (chip stays usable meanwhile).
+  requestSession()
+    .then((s) => {
+      if (!s || s.ok === false) return;
+      if (s.account) {
+        settings.accountInfo = s.account;
+        if (el.accountEmail) el.accountEmail.textContent = s.account.email || email;
+        if (el.accountAvatar) el.accountAvatar.textContent = initialsFor(s.account);
+      }
+      renderUsageMeter(s.usage, s.account);
+    })
+    .catch(() => {});
+}
+
+function initialsFor(info) {
+  const base = (info.first_name || info.email || 'L').trim();
+  return base.slice(0, 1).toUpperCase();
+}
+
+function renderUsageMeter(usage, account) {
+  if (!el.accountUsage) return;
+  const tier = (account && account.tier) || (settings.accountInfo && settings.accountInfo.tier) || '';
+  if (!usage) {
+    el.accountUsage.textContent = tier ? `Plan: ${tier}` : '';
+    return;
   }
+  const used = usage.used ?? 0;
+  const limit = usage.limit;
+  const period = usage.period || 'month';
+  const meter =
+    limit === null || limit === undefined
+      ? `${used} used this ${period}`
+      : `${used} / ${limit} this ${period}`;
+  el.accountUsage.textContent = tier ? `${tier} · ${meter}` : meter;
+}
+
+// ---------------------------------------------------------------------------
+// Sign-in / sign-out / session-expiry UX
+// ---------------------------------------------------------------------------
+
+function startSignIn() {
+  port?.postMessage({ type: MSG.SIGN_IN_START });
+  if (el.signinScreen) el.signinScreen.hidden = false;
+  if (el.signinWaiting) el.signinWaiting.hidden = false;
+  if (el.signinBtn) el.signinBtn.disabled = true;
+}
+
+/** Session ended (sign-out or a 401). Never fall back to a stored key. */
+/**
+ * Wipes every trace of the previous session's conversation: the rendered
+ * transcript DOM, the in-memory BYOK history (which accumulates full page
+ * text/screenshots), and the adopted product-chat conversation id. Called on
+ * sign-out and session-expiry so a shared/kiosk profile never leaks the prior
+ * user's chat, and a subsequent account never resumes a stale conversation id.
+ */
+function clearChatSession() {
+  chatConversation = [];
+  productConversationId = 0;
+  if (el.messages) el.messages.innerHTML = '';
+}
+
+function onAuthLost(expired) {
+  clearChatSession();
+  settings.authMode = null;
+  settings.extensionToken = null;
+  settings.accountInfo = null;
+  if (el.accountChip) el.accountChip.hidden = true;
+  if (el.accountMenu) el.accountMenu.hidden = true;
+  if (expired) {
+    showSessionExpiredBanner();
+  } else {
+    sessionExpired = false;
+    if (el.keyBanner) el.keyBanner.hidden = true;
+    refreshAuthUI();
+  }
+}
+
+function showSessionExpiredBanner() {
+  sessionExpired = true;
+  if (el.keyBannerText) el.keyBannerText.textContent = 'Your Lexi session ended — sign in again.';
+  if (el.keyBannerBtn) el.keyBannerBtn.textContent = 'Sign in';
+  if (el.keyBanner) el.keyBanner.hidden = false;
+  if (el.signinScreen) el.signinScreen.hidden = true;
+  el.sendBtn.disabled = true; // disable the composer until re-auth
+}
+
+async function doSignOut() {
+  if (el.accountMenu) el.accountMenu.hidden = true;
+  await requestSignOut();
+  onAuthLost(false);
 }
 
 function populateModelPicker() {
@@ -319,7 +493,32 @@ el.modelPicker.addEventListener('change', () => {
 });
 
 el.settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
-el.keyBannerBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+// Sign-in / re-auth entry points.
+el.signinBtn?.addEventListener('click', () => startSignIn());
+el.keyBannerBtn.addEventListener('click', () => {
+  // Re-auth from the session-expiry banner: clear the expired state and start
+  // a fresh sign-in (never silently reuse a stored key).
+  sessionExpired = false;
+  el.sendBtn.disabled = false;
+  el.keyBanner.hidden = true;
+  startSignIn();
+});
+
+// Account chip dropdown (usage + sign out).
+el.accountChipBtn?.addEventListener('click', () => {
+  const willShow = el.accountMenu.hidden;
+  el.accountMenu.hidden = !willShow;
+  el.accountChipBtn.setAttribute('aria-expanded', String(willShow));
+});
+el.accountSignoutBtn?.addEventListener('click', () => doSignOut());
+document.addEventListener('click', (e) => {
+  if (!el.accountMenu || el.accountMenu.hidden) return;
+  if (!el.accountChip.contains(e.target)) {
+    el.accountMenu.hidden = true;
+    el.accountChipBtn.setAttribute('aria-expanded', 'false');
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Context chip (active tab)
@@ -494,16 +693,23 @@ async function runTextQuickAction(action) {
     const wantsSelection = typeof action.needs === 'string' && action.needs.split('|').includes('selection');
     const selection = wantsSelection ? await getPageSelection(currentTab.id) : '';
 
-    const pageData = includePageContext ? await requestExtractPage(currentTab.id) : null;
-    // Quick-action templates return ONLY the instruction; the page content is
-    // appended (sanitized + <untrusted_page_content>-wrapped) as its own block
-    // by buildContentBlocks(), matching the quick-action-templates.js contract.
+    // Quick-action templates return ONLY the instruction.
     const messageText = action.prompt({
       selection,
       pageText: '',
       userQuestion: '',
     });
 
+    // Account mode -> the instruction becomes a product-chat turn (the page
+    // context is attached by runProductChat; the server owns tools/prompt).
+    if (settings.authMode === 'account') {
+      await runProductChat(messageText);
+      return;
+    }
+
+    const pageData = includePageContext ? await requestExtractPage(currentTab.id) : null;
+    // BYOK: page content is appended (sanitized + <untrusted_page_content>-wrapped)
+    // as its own block by buildContentBlocks().
     await runChatCompletion(buildContentBlocks(messageText, pageData));
   } catch (err) {
     renderer.appendSystemNote(describeError(err));
@@ -521,8 +727,17 @@ async function runScreenshotAskAction(action, question) {
     el.costHint.hidden = true;
 
     const messageText = action.prompt({ selection: '', pageText: '', userQuestion: question });
-    const blocks = [imageBlock(shot.dataUrl), { type: 'text', text: messageText }];
 
+    // Account mode -> attach the screenshot as an inline image on a product-chat turn.
+    if (settings.authMode === 'account') {
+      await runProductChat(messageText, {
+        inlineImages: [dataUrlToInlineImage(shot.dataUrl)],
+        previewImage: shot.dataUrl,
+      });
+      return;
+    }
+
+    const blocks = [imageBlock(shot.dataUrl), { type: 'text', text: messageText }];
     await runChatCompletion(blocks, { previewImage: shot.dataUrl });
   } catch (err) {
     el.costHint.hidden = true;
@@ -717,8 +932,13 @@ el.promptInput.addEventListener('keydown', (e) => {
 });
 
 function ensureReadyToSend() {
-  if (!settings.apiKey && !nanoAvailable) {
-    refreshKeyBanner();
+  if (sessionExpired) {
+    showSessionExpiredBanner();
+    return false;
+  }
+  if (!isAuthenticated() && !nanoAvailable) {
+    // Signed out — surface the sign-in screen rather than sending.
+    if (el.signinScreen) el.signinScreen.hidden = false;
     return false;
   }
   if (!currentTab) {
@@ -731,6 +951,12 @@ function ensureReadyToSend() {
 async function handleChatSend(text) {
   if (!ensureReadyToSend()) return;
   renderer.appendUser(text);
+  // Account mode -> the real product chat pipeline (/llm/chat). BYOK escape
+  // hatch -> the local Anthropic see-only tool loop (unchanged).
+  if (settings.authMode === 'account') {
+    await runProductChat(text);
+    return;
+  }
   try {
     const pageData = includePageContext ? await requestExtractPage(currentTab.id) : null;
     await runChatCompletion(buildContentBlocks(text, pageData), { userVisibleText: text });
@@ -807,7 +1033,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
           }
         }
       } catch (err) {
-        handle.finalize({ notLegalAdviceFooter: false });
+        handle.finalize();
         renderer.appendSystemNote(describeError(err));
         return;
       }
@@ -891,6 +1117,7 @@ function safeParseJson(json) {
 function describeAgentError(err) {
   if (!err) return '';
   const type = err.type || '';
+  if (type === 'SessionExpiredError') return 'Your Lexi session ended — sign in again.';
   if (type === 'AuthError') return 'Your API key was rejected. Check it in Settings.';
   if (type === 'ForbiddenError') return 'Your API key lacks access to this model. Try another model in Settings.';
   if (type === 'RateLimitError') return 'Rate limited by Anthropic — please wait a moment and try again.';
@@ -917,8 +1144,158 @@ function describeError(err) {
 }
 
 // ---------------------------------------------------------------------------
+// Chat mode (account): the real product pipeline (/llm/chat, v2 block-SSE)
+// ---------------------------------------------------------------------------
+
+/** Captures the current page as a <page_context> payload for product chat. */
+async function capturePageContext() {
+  try {
+    const page = await requestExtractPage(currentTab.id);
+    return {
+      url: page.url || currentTab.url || '',
+      title: page.title || currentTab.title || '',
+      text: sanitize(page.text || ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Splits a data: URL into the inline-image shape the product chat expects. */
+function dataUrlToInlineImage(dataUrl) {
+  const comma = typeof dataUrl === 'string' ? dataUrl.indexOf(',') : -1;
+  return {
+    base64: comma === -1 ? dataUrl : dataUrl.slice(comma + 1),
+    media_type: 'image/png',
+  };
+}
+
+/**
+ * Runs one product-chat turn against /llm/chat and drives chat-render from the
+ * normalized SSE events. `opts.inlineImages` attaches transient screenshots;
+ * `opts.previewImage` renders a preview bubble.
+ */
+async function runProductChat(userMessage, opts = {}) {
+  if (chatRunActive) return;
+  chatRunActive = true;
+  el.sendBtn.disabled = true;
+
+  const handle = renderer.startAssistant();
+  if (opts.previewImage) handle.appendImage(opts.previewImage);
+  chatAbortController = new AbortController();
+
+  // block_index -> {kind, toolId} so a block_stop (which carries only the
+  // index + final payload) can settle the right thinking/tool affordance.
+  const blockMeta = new Map();
+
+  const onEvent = (evt) => {
+    switch (evt.type) {
+      case 'stream_start':
+        productConversationId = evt.conversationId;
+        break;
+      case 'text':
+        handle.pushDelta(evt.delta);
+        break;
+      case 'snapshot':
+        if (evt.content) handle.pushDelta(evt.content);
+        break;
+      case 'block_start':
+        blockMeta.set(evt.blockIndex, { kind: evt.kind, toolId: evt.toolId });
+        if (evt.kind === 'tool') handle.openTool(evt.toolId, evt.name, evt.status);
+        else if (evt.kind === 'artifact') handle.openArtifact(evt.title, artifactDeepLink(evt));
+        break;
+      case 'block_delta':
+        if (evt.kind === 'text') handle.pushDelta(evt.delta);
+        else if (evt.kind === 'thinking') handle.pushThinking(evt.delta);
+        // input_json / artifact_content: not surfaced in v1.
+        break;
+      case 'block_stop': {
+        const meta = blockMeta.get(evt.blockIndex) || {};
+        if (meta.kind === 'thinking') handle.settleThinking();
+        else if (meta.kind === 'tool' && evt.final) handle.settleTool(meta.toolId, evt.final.status);
+        break;
+      }
+      case 'thinking':
+        handle.pushThinking(evt.delta);
+        break;
+      case 'status_line':
+        handle.setStatusLine(evt.message);
+        break;
+      case 'banner':
+        handle.showBanner(evt.message);
+        break;
+      case 'follow_ups':
+        renderer.appendFollowUps(evt.questions, (q) => {
+          renderer.appendUser(q);
+          runProductChat(q);
+        });
+        break;
+      case 'complete':
+        handle.finalize();
+        break;
+      case 'cancel':
+        handle.finalize();
+        renderer.appendSystemNote('Generation stopped.');
+        break;
+      case 'error':
+        handle.finalize();
+        renderer.appendSystemNote(evt.message || 'Lexi hit an error.');
+        break;
+      default:
+        break;
+    }
+  };
+
+  try {
+    const pageContext = includePageContext ? await capturePageContext() : null;
+    await streamProductChat({
+      baseUrl: LEXI_API_BASE,
+      token: settings.extensionToken,
+      conversationId: productConversationId,
+      userMessage,
+      pageContext,
+      inlineImages: opts.inlineImages || [],
+      sources: [],
+      mode: 'chat',
+      signal: chatAbortController.signal,
+      onEvent,
+    });
+    handle.finalize();
+  } catch (err) {
+    handle.finalize();
+    if (err && err.name === 'AuthError') {
+      onAuthLost(true);
+    } else if (err && err.name === 'AbortError') {
+      renderer.appendSystemNote('Stopped.');
+    } else {
+      renderer.appendSystemNote(describeError(err));
+    }
+  } finally {
+    chatRunActive = false;
+    chatAbortController = null;
+    el.sendBtn.disabled = sessionExpired;
+  }
+}
+
+/** Best-effort Open-in-Lexi deep link for a streamed artifact card. */
+function artifactDeepLink() {
+  const appOrigin = (CONNECT_ORIGINS && CONNECT_ORIGINS[0]) || '';
+  if (!appOrigin || !productConversationId) return null;
+  return `${appOrigin}/chat/${productConversationId}`;
+}
+
+// ---------------------------------------------------------------------------
 // Agent mode: delegate to agent-loop.js, render its events
 // ---------------------------------------------------------------------------
+
+/** Auth descriptor for Agent Mode's transport (proxy in account mode, direct
+ * Anthropic in the BYOK escape hatch). */
+function agentAuthDescriptor() {
+  if (settings.authMode === 'account' && settings.extensionToken) {
+    return { mode: 'account', token: settings.extensionToken, baseUrl: LEXI_API_BASE };
+  }
+  return { mode: 'byok', apiKey: settings.apiKey };
+}
 
 async function handleAgentSend(task) {
   if (!ensureReadyToSend()) return;
@@ -940,7 +1317,7 @@ async function handleAgentSend(task) {
     task,
     model: settings.model || DEFAULT_MODEL,
     approvalMode: settings.approvalMode || 'manual',
-    apiKey: settings.apiKey,
+    auth: agentAuthDescriptor(),
     onEvent: handleAgentEvent,
   });
   agentRun.start();
@@ -1024,6 +1401,11 @@ function finishAgentRun(status, event) {
     // agent-loop.js emits errors as {status:'error', error:{type, message}}.
     const errMsg = (event && event.error && event.error.message) || (event && event.message);
     if (errMsg) renderer.appendSystemNote(describeAgentError(event.error) || errMsg);
+    // A session-expiry (account 401) must surface the re-auth banner and never
+    // silently fall back to a stored key.
+    if (event && event.error && event.error.type === 'SessionExpiredError') {
+      onAuthLost(true);
+    }
   }
 
   el.actingBar.classList.add('lexi-acting-done');
@@ -1191,7 +1573,7 @@ async function boot() {
 
   applySettings(loadedSettings.settings || loadedSettings);
   nanoAvailable = nano === 'available';
-  refreshKeyBanner();
+  refreshAuthUI();
 
   currentTab = resolvedTab;
   renderContextChip();

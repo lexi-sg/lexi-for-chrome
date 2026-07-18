@@ -25,6 +25,19 @@
       </button>
     </header>
 
+    <!-- ================= ACCOUNT CHIP ================= -->
+    <div id="account-chip" hidden>
+      <button id="account-chip-btn" type="button" aria-haspopup="true" aria-expanded="false">
+        <span id="account-avatar" aria-hidden="true"></span>
+        <span id="account-email">Signed in</span>
+        <span id="account-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div id="account-menu" hidden>
+        <div id="account-usage" class="account-usage"></div>
+        <button id="account-signout-btn" type="button">Sign out</button>
+      </div>
+    </div>
+
     <!-- ================= CONTEXT CHIP ================= -->
     <div id="context-chip">
       <img id="context-favicon" alt="" width="14" height="14" />
@@ -34,10 +47,21 @@
       </button>
     </div>
 
-    <!-- ============= NO-KEY / ONBOARDING BANNER ============= -->
+    <!-- ============= SESSION-EXPIRY / RE-AUTH BANNER ============= -->
     <div id="key-banner" hidden>
-      <span>Add your Anthropic API key to start.</span>
-      <button id="key-banner-btn" type="button">Set up Lexi</button>
+      <span id="key-banner-text">Your Lexi session ended — sign in again.</span>
+      <button id="key-banner-btn" type="button">Sign in</button>
+    </div>
+
+    <!-- ============= FIRST-RUN SIGN-IN SCREEN ============= -->
+    <div id="signin-screen" hidden>
+      <div id="signin-card">
+        <span id="signin-logo">Lexi</span>
+        <h2 id="signin-title">The Lexi you use at work, on every page</h2>
+        <p id="signin-sub">Sign in with your Lexi account to read, analyze, and act on the page you’re on.</p>
+        <button id="signin-btn" type="button">Sign in with Lexi</button>
+        <p id="signin-waiting" hidden>Waiting for sign-in in the new tab…</p>
+      </div>
     </div>
 
     <!-- ================== MESSAGES LOG ================== -->
@@ -107,9 +131,6 @@
 
       <div id="slash-menu" hidden></div>
     </form>
-
-    <!-- =================== FOOTER ======================= -->
-    <footer id="disclaimer">Built by Lexi — getlexi.io · Not legal advice.</footer>
   </div>
 
   <script type="module" src="sidepanel.js"></script>

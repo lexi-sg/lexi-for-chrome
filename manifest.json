@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "description": "AI legal assistant: legal review, contract analysis, legal drafting help, risk flags & judgment summaries on any page. Private.",
   "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9sXoM3fHUndZltf0O66CBd7uAK83qT0tYkNWgfNRFvM3FPqBRTFznJ2PMtj5tJGcaRBrO8Rwslx+5FzXHSl5wdFKoiqkmtt35LNAURcqWUf52px6hhQm3bSu6ANeRO+1Cx0/nnRD6kFu/nGoueYj7f+d2P1nmUFk76/yOH6B4ff4o690fL8PG33DVpOmwn1hzRG/rFM9OUSw24I9FB1GoNco0yBE+jrCeG+Yz2+erGK+YxiV3UzW7GftT3VY3JzeHZWgBR2HkDJjgQX5mNxj0YB2Em7oxh5DW9EvTk30JKGA0Ei7N5XqvT1Dp1KqlA6XKGxZSCRg2LPDI2rM8A0gGwIDAQAB",
   "background": {
     "service_worker": "src/background/service-worker.js",
     "type": "module"
@@ -36,6 +37,8 @@
     "alarms"
   ],
   "host_permissions": [
+    "https://api.getlexi.io/*",
+    "https://staging-api.getlexi.io/*",
     "https://api.anthropic.com/*"
   ],
   "optional_permissions": [
@@ -45,7 +48,13 @@
   "optional_host_permissions": [
     "<all_urls>"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://app.getlexi.io/*",
+      "https://staging.getlexi.io/*"
+    ]
+  },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.anthropic.com"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.getlexi.io https://staging-api.getlexi.io https://api.anthropic.com"
   }
 }

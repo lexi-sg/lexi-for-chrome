@@ -8,7 +8,12 @@
 //
 // ES module.
 
-import { ANTHROPIC_URL, ANTHROPIC_MODELS_URL, ANTHROPIC_VERSION } from '../config.js';
+import {
+  ANTHROPIC_URL,
+  ANTHROPIC_MODELS_URL,
+  ANTHROPIC_VERSION,
+  EXTENSION_PROXY_PATH,
+} from '../config.js';
 
 // ---------------------------------------------------------------------------
 // Typed error taxonomy (see spec.agent_loop_design "ERROR RECOVERY").
@@ -86,9 +91,40 @@ function backoffDelay(attempt) {
   return Math.min(BASE_DELAY_MS * 2 ** attempt + jitter, MAX_DELAY_MS);
 }
 
-function buildHeaders(apiKey) {
+/**
+ * Normalize the caller's auth descriptor. Two shapes are accepted so both
+ * transports share one client:
+ *   {mode:'account', token, baseUrl} -> the landed Anthropic-shaped proxy
+ *       (POST {baseUrl}/api/extension/messages) with a Bearer token. The
+ *       server injects the real Anthropic key; we send NO x-api-key.
+ *   {mode:'byok', apiKey}            -> direct api.anthropic.com (escape hatch)
+ * A bare `apiKey` (legacy call shape) is treated as BYOK for backwards
+ * compatibility, so existing BYOK callers/tests keep working unchanged.
+ */
+function resolveAuth(auth, apiKey) {
+  if (auth && auth.mode) return auth;
+  return { mode: 'byok', apiKey };
+}
+
+/** Target URL for a resolved auth descriptor. */
+function endpointFor(auth) {
+  if (auth.mode === 'account') return `${auth.baseUrl}${EXTENSION_PROXY_PATH}`;
+  return ANTHROPIC_URL;
+}
+
+function buildHeaders(auth) {
+  if (auth.mode === 'account') {
+    // Bearer token only — never x-api-key/anthropic-* (the proxy owns those).
+    // X-Lexi-Extension-Mode:agent flags this traffic for the 2x agent-quota
+    // weighting the landed entitlement service applies.
+    return {
+      Authorization: `Bearer ${auth.token}`,
+      'X-Lexi-Extension-Mode': 'agent',
+      'content-type': 'application/json',
+    };
+  }
   return {
-    'x-api-key': apiKey,
+    'x-api-key': auth.apiKey,
     'anthropic-version': ANTHROPIC_VERSION,
     'anthropic-dangerous-direct-browser-access': 'true',
     'content-type': 'application/json',
@@ -163,13 +199,15 @@ function statusForErrorType(type) {
  * Response (still unread — caller consumes the SSE body). Throws a typed
  * error for any other non-2xx status. AbortError propagates immediately.
  */
-async function postWithRetry(body, apiKey, signal) {
+async function postWithRetry(body, auth, signal) {
+  const url = endpointFor(auth);
+  const headers = buildHeaders(auth);
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let response;
     try {
-      response = await fetch(ANTHROPIC_URL, {
+      response = await fetch(url, {
         method: 'POST',
-        headers: buildHeaders(apiKey),
+        headers,
         body: JSON.stringify(body),
         signal,
       });
@@ -370,7 +408,9 @@ function interpretSseEvent(parsed, blocks, usage) {
  *   {type:'usage', usage}
  *
  * @param {object} opts
- * @param {string} opts.apiKey
+ * @param {{mode:'account',token:string,baseUrl:string}|{mode:'byok',apiKey:string}} [opts.auth]
+ *   Auth descriptor (preferred). If omitted, `opts.apiKey` is used as BYOK.
+ * @param {string} [opts.apiKey] - legacy BYOK key (equivalent to auth:{mode:'byok',apiKey}).
  * @param {string} opts.model
  * @param {string} opts.system - plain text system prompt (wrapped with an
  *   ephemeral cache_control breakpoint automatically).
@@ -379,7 +419,8 @@ function interpretSseEvent(parsed, blocks, usage) {
  * @param {number} opts.maxTokens
  * @param {AbortSignal} [opts.signal]
  */
-export async function* streamMessage({ apiKey, model, system, messages, tools, maxTokens, signal }) {
+export async function* streamMessage({ apiKey, auth, model, system, messages, tools, maxTokens, signal }) {
+  const resolvedAuth = resolveAuth(auth, apiKey);
   const body = {
     model,
     max_tokens: maxTokens,
@@ -391,7 +432,7 @@ export async function* streamMessage({ apiKey, model, system, messages, tools, m
   if (thinking) body.thinking = thinking;
   if (tools && tools.length) body.tools = tools;
 
-  const response = await postWithRetry(body, apiKey, signal);
+  const response = await postWithRetry(body, resolvedAuth, signal);
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let buffer = '';
@@ -435,7 +476,7 @@ export async function validateKey(apiKey) {
   try {
     const response = await fetch(ANTHROPIC_MODELS_URL, {
       method: 'GET',
-      headers: buildHeaders(apiKey),
+      headers: buildHeaders({ mode: 'byok', apiKey }),
     });
     if (response.ok) return { valid: true, error: null };
     const message = await parseErrorBody(response);
