@@ -187,7 +187,6 @@
     color: var(--lexi-accent);
   }
 
-  #onboarding.is-hidden,
   #settings.is-hidden {
     display: none;
   }
@@ -199,25 +198,6 @@
     display: none !important;
   }
 
-  .key-row {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  #api-key-input {
-    flex: 1;
-    min-width: 0;
-    padding: 9px 10px;
-    border-radius: var(--lexi-r);
-    border: 1px solid var(--lexi-border);
-    background: var(--lexi-bg);
-    color: var(--lexi-text);
-    font-size: 13px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-
-  #api-key-input:focus,
   select:focus,
   button:focus-visible,
   input[type='checkbox']:focus-visible,
@@ -275,25 +255,6 @@
   .btn-small {
     padding: 5px 10px;
     font-size: 12px;
-  }
-
-  .key-status {
-    margin: 0;
-    min-height: 16px;
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .key-status[data-state='ok'] {
-    color: var(--lexi-ok);
-  }
-
-  .key-status[data-state='error'] {
-    color: var(--lexi-risk);
-  }
-
-  .key-status[data-state='pending'] {
-    color: var(--lexi-muted);
   }
 
   .field-row {
@@ -438,9 +399,6 @@
   }
 
   @media (max-width: 420px) {
-    .key-row {
-      flex-direction: column;
-    }
     .field-row {
       flex-direction: column;
       align-items: flex-start;
@@ -501,71 +459,13 @@
     </section>
 
     <!-- ==================================================================
-         ADVANCED: BRING YOUR OWN KEY (escape hatch). Hidden by default;
-         only surfaced when a key is already stored on this device (or via
-         the "Change key" action). New users never see this.
-         ================================================================== -->
-    <section id="onboarding" class="card is-hidden">
-      <h1>Advanced: bring your own key</h1>
-      <p class="muted">
-        Optional developer path — call Anthropic directly with your own key.
-        The key is stored only on this device.
-      </p>
-
-      <label for="api-key-input">Anthropic API key</label>
-      <div class="key-row">
-        <input
-          id="api-key-input"
-          type="password"
-          name="lexi-api-key"
-          autocomplete="off"
-          spellcheck="false"
-          placeholder="sk-ant-..."
-        />
-        <button id="validate-btn" type="button" class="btn btn-accent">
-          Validate &amp; save
-        </button>
-      </div>
-      <p id="key-status" class="key-status" role="status" aria-live="polite"></p>
-
-      <p class="muted small">
-        Don't have a key?
-        <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer"
-          >Get one at console.anthropic.com</a
-        >.
-      </p>
-      <p class="muted small">
-        Your key stays on this device and is sent only to Anthropic, only
-        when you ask Lexi a question.
-      </p>
-    </section>
-
-    <!-- ==================================================================
-         SETTINGS (shown once a key is saved; the onboarding card above
-         collapses and this key-summary row takes its place).
+         SETTINGS. Login-only product: the Lexi server owns model/tier
+         selection (product-chat sends no model), so there is NO API-key
+         section and NO raw model picker here. The BYOK escape hatch (the
+         hermetic e2e seam) still works when a key is seeded into
+         chrome.storage.local, but it has ZERO visible UI.
          ================================================================== -->
     <section id="settings" class="card">
-      <div id="key-summary-row" class="key-summary-row" hidden>
-        <span class="muted small">Anthropic API key: <strong id="key-summary-text">not set</strong></span>
-        <button id="change-key-btn" type="button" class="btn btn-muted btn-small">Change key</button>
-      </div>
-
-      <hr class="divider" />
-
-      <!-- Raw model selection is a BYOK-only concept. In account (signed-in)
-           mode the Lexi server owns model/tier selection, so this whole
-           section is hidden by renderAccount() — lawyers never pick raw
-           Anthropic model names. -->
-      <div id="default-model-section" hidden>
-        <h2>Default model</h2>
-        <div class="field-row">
-          <label for="default-model">Used for chat, quick actions, and agent mode</label>
-          <select id="default-model"></select>
-        </div>
-
-        <hr class="divider" />
-      </div>
-
       <fieldset class="field-group" id="approval-mode-group">
         <legend>Agent approval mode</legend>
 

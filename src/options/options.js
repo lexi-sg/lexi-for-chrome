@@ -1,15 +1,16 @@
 // src/options/options.js
 //
-// Controller for the options/onboarding page (src/options/options.html).
-// Reads/writes chrome.storage.local DIRECTLY (per SPEC architecture_overview:
-// "Options/onboarding page reads/writes chrome.storage.local directly and
-// pings the SW only for KEY_VALIDATE") and never logs/echoes the API key.
+// Controller for the login-only settings page (src/options/options.html).
+// Reads/writes chrome.storage.local DIRECTLY for the account, approval-mode,
+// on-device-model, and per-site-grant settings. There is NO API-key UI and NO
+// raw model picker: the Lexi server owns model/tier selection (product-chat
+// sends no model). The BYOK escape hatch (the hermetic e2e seam) still works
+// when a key is seeded into chrome.storage.local, but has ZERO visible UI.
 //
 // ES module (loaded via <script type="module">) — safe to use import/export.
 
 import {
   MSG,
-  MODELS,
   DEFAULT_MODEL,
   STORAGE_KEYS,
   AGENT_MODE_AVAILABLE,
@@ -35,15 +36,6 @@ const accountTierText = $('account-tier-text');
 const accountUsageText = $('account-usage-text');
 const accountManageLink = $('account-manage-link');
 
-const onboardingSection = $('onboarding');
-const apiKeyInput = $('api-key-input');
-const validateBtn = $('validate-btn');
-const keyStatusEl = $('key-status');
-const keySummaryRow = $('key-summary-row');
-const keySummaryText = $('key-summary-text');
-const changeKeyBtn = $('change-key-btn');
-const modelSelect = $('default-model');
-const defaultModelSection = $('default-model-section');
 const approvalRadios = () =>
   Array.from(document.querySelectorAll('input[name="approval-mode"]'));
 const nanoToggle = $('nano-tier-toggle');
@@ -59,7 +51,6 @@ init();
 
 async function init() {
   applyBuildFlags();
-  populateModelSelect();
   wireEvents();
   await loadSettings();
   await refreshAccount();
@@ -84,38 +75,15 @@ function hideSectionWithDivider(node) {
   node.hidden = true;
 }
 
-function populateModelSelect() {
-  modelSelect.innerHTML = '';
-  for (const model of MODELS) {
-    const opt = document.createElement('option');
-    opt.value = model.id;
-    opt.textContent = model.label;
-    modelSelect.appendChild(opt);
-  }
-}
-
 function wireEvents() {
   accountSigninBtn?.addEventListener('click', onAccountSignInClick);
   accountSignoutBtn?.addEventListener('click', onAccountSignOutClick);
   refreshManageAccountLink();
-  validateBtn.addEventListener('click', onValidateClick);
-  changeKeyBtn.addEventListener('click', onChangeKeyClick);
-  modelSelect.addEventListener('change', onModelChange);
   approvalRadios().forEach((radio) =>
     radio.addEventListener('change', onApprovalModeChange)
   );
   nanoToggle.addEventListener('change', onNanoToggleChange);
   nanoDownloadBtn.addEventListener('click', onNanoDownloadClick);
-
-  // Enter key in the API key field triggers validate, same as clicking the
-  // button (small onboarding-flow nicety, not required by spec but expected
-  // UX for a single-field form).
-  apiKeyInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onValidateClick();
-    }
-  });
 
   // Sign-in completes in another tab (the connect handoff), so re-render the
   // account section when the auth keys change under us. Also re-resolve the
@@ -159,18 +127,6 @@ function refreshManageAccountLink() {
 async function loadSettings() {
   const stored = await chrome.storage.local.get(ALL_STORAGE_KEYS);
 
-  const hasKey =
-    typeof stored[STORAGE_KEYS.API_KEY] === 'string' &&
-    stored[STORAGE_KEYS.API_KEY].length > 0;
-
-  // Login-only UX: the BYOK onboarding card is the escape hatch, never shown
-  // to new users. It is reachable only via "Change key" (the summary row,
-  // which only appears when a key is already stored on this device).
-  setOnboardingVisible(false);
-  updateKeySummary(hasKey);
-
-  modelSelect.value = stored[STORAGE_KEYS.MODEL] || DEFAULT_MODEL;
-
   const approvalMode = stored[STORAGE_KEYS.APPROVAL_MODE] || 'manual';
   const matchingRadio = approvalRadios().find((r) => r.value === approvalMode);
   if (matchingRadio) {
@@ -178,76 +134,6 @@ async function loadSettings() {
   }
 
   renderSiteGrants(stored[STORAGE_KEYS.SITE_GRANTS] || {});
-}
-
-function setOnboardingVisible(show) {
-  onboardingSection.classList.toggle('is-hidden', !show);
-  if (show) {
-    setKeyStatus('', '');
-    // Give the field focus so a first-run visitor can start typing right
-    // away; harmless no-op if the page isn't focused yet.
-    apiKeyInput.focus({ preventScroll: true });
-  }
-}
-
-function updateKeySummary(hasKey) {
-  keySummaryText.textContent = hasKey ? 'saved on this device' : 'not set';
-  keySummaryRow.hidden = !hasKey;
-}
-
-function setKeyStatus(state, message) {
-  keyStatusEl.textContent = message;
-  if (state) {
-    keyStatusEl.dataset.state = state;
-  } else {
-    delete keyStatusEl.dataset.state;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// API key validate + save
-// ---------------------------------------------------------------------------
-async function onValidateClick() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    setKeyStatus('error', 'Enter an API key first.');
-    return;
-  }
-
-  validateBtn.disabled = true;
-  setKeyStatus('pending', 'Validating…');
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      type: MSG.KEY_VALIDATE,
-      apiKey,
-    });
-
-    if (response && response.valid) {
-      await chrome.storage.local.set({ [STORAGE_KEYS.API_KEY]: apiKey });
-      apiKeyInput.value = '';
-      setKeyStatus('ok', 'Key validated and saved to this device.');
-      updateKeySummary(true);
-      setOnboardingVisible(false);
-      await broadcastSettings();
-    } else {
-      const reason =
-        (response && response.error) ||
-        'Could not validate this key. Double-check it and try again.';
-      setKeyStatus('error', reason);
-    }
-  } catch (err) {
-    setKeyStatus(
-      'error',
-      'Could not reach the Lexi background service. Reload this page and try again.'
-    );
-  } finally {
-    validateBtn.disabled = false;
-  }
-}
-
-function onChangeKeyClick() {
-  setOnboardingVisible(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -269,9 +155,6 @@ function renderAccount(session) {
   const signedIn = !!(session && session.ok);
   if (accountSignedOut) accountSignedOut.hidden = signedIn;
   if (accountSignedIn) accountSignedIn.hidden = !signedIn;
-  // Raw model picker is a BYOK-only affordance — the server owns model/tier
-  // selection for account users, so surface it only when signed out.
-  if (defaultModelSection) defaultModelSection.hidden = signedIn;
   if (!signedIn) return;
 
   const account = session.account || {};
@@ -306,13 +189,8 @@ async function onAccountSignOutClick() {
 }
 
 // ---------------------------------------------------------------------------
-// Default model + approval mode
+// Approval mode
 // ---------------------------------------------------------------------------
-async function onModelChange() {
-  await chrome.storage.local.set({ [STORAGE_KEYS.MODEL]: modelSelect.value });
-  await broadcastSettings();
-}
-
 async function onApprovalModeChange(event) {
   const radio = event.currentTarget;
   if (!radio.checked) return;
@@ -336,7 +214,7 @@ async function refreshNanoRow() {
     nanoToggle.disabled = false;
     nanoToggle.checked = prefersNano;
     nanoNote.textContent =
-      'Ready to use as a keyless fallback for quick explain/summarize actions when no Claude key is set.';
+      'Ready to use as an on-device fallback for quick explain/summarize actions when you are offline or signed out.';
   } else if (availability === 'downloadable') {
     nanoToggle.disabled = true;
     nanoToggle.checked = false;
@@ -351,7 +229,7 @@ async function refreshNanoRow() {
     nanoToggle.disabled = true;
     nanoToggle.checked = false;
     nanoNote.textContent =
-      'Not available on this device (needs Chrome 138+, sufficient free disk space, and a supported GPU). For careful contract analysis, add a Claude key above.';
+      'Not available on this device (needs Chrome 138+, sufficient free disk space, and a supported GPU). For careful contract analysis, sign in with your Lexi account above.';
   }
 }
 

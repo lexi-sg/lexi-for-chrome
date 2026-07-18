@@ -145,7 +145,7 @@ test.describe('lite build — static checks (no browser, no API key required)', 
     expect(manifest.optional_host_permissions).toBeUndefined();
     expect(manifest.permissions).toEqual(expect.arrayContaining(['sidePanel', 'activeTab', 'scripting', 'storage']));
     expect(manifest.host_permissions).toEqual(
-      expect.arrayContaining(['https://api.getlexi.io/*', 'https://staging-api.getlexi.io/*']),
+      expect.arrayContaining(['https://api.getlexi.io/*', 'https://api-staging.getlexi.io/*']),
     );
     expect(manifest.host_permissions).not.toContain('https://api.anthropic.com/*');
     // Name/description are unchanged from the full build.

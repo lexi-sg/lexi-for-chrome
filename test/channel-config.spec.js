@@ -161,11 +161,11 @@ function buildChannelTestExtensionCopy({ configOrigin, prodOrigin, stagingOrigin
   const replacements = [
     [/export const RUNTIME_CONFIG_URL = '[^']*';/, `export const RUNTIME_CONFIG_URL = '${configOrigin}/api/extension/runtime-config';`],
     [/api_base:\s*'https:\/\/api\.getlexi\.io'/, `api_base: '${prodOrigin}'`],
-    [/api_base:\s*'https:\/\/staging-api\.getlexi\.io'/, `api_base: '${stagingOrigin}'`],
+    [/api_base:\s*'https:\/\/api-staging\.getlexi\.io'/, `api_base: '${stagingOrigin}'`],
     [/connect_url:\s*'https:\/\/staging\.getlexi\.io\/extension\/connect'/, `connect_url: '${connectOrigin}/extension/connect'`],
     [/connect_origin:\s*'https:\/\/staging\.getlexi\.io'/, `connect_origin: '${connectOrigin}'`],
     [
-      /api_base:\s*\['https:\/\/api\.getlexi\.io',\s*'https:\/\/staging-api\.getlexi\.io'\]/,
+      /api_base:\s*\['https:\/\/api\.getlexi\.io',\s*'https:\/\/api-staging\.getlexi\.io'\]/,
       `api_base: ['${prodOrigin}', '${stagingOrigin}']`,
     ],
     [

@@ -136,7 +136,7 @@ export const CHANNELS = {
   },
   staging: {
     channel: 'staging',
-    api_base: 'https://staging-api.getlexi.io',
+    api_base: 'https://api-staging.getlexi.io',
     connect_url: 'https://staging.getlexi.io/extension/connect',
     connect_origin: 'https://staging.getlexi.io',
   },
@@ -151,7 +151,7 @@ export const RUNTIME_CONFIG_URL = 'https://api.getlexi.io/api/extension/runtime-
 // unless every host it names is on these lists — so a compromised or spoofed
 // control plane can never point the extension at an attacker origin.
 export const CHANNEL_ALLOWLIST = {
-  api_base: ['https://api.getlexi.io', 'https://staging-api.getlexi.io'],
+  api_base: ['https://api.getlexi.io', 'https://api-staging.getlexi.io'],
   connect_origin: ['https://app.getlexi.io', 'https://staging.getlexi.io'],
 };
 

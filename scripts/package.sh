@@ -32,7 +32,7 @@ EOF
 
 # For the prod store build, declare BOTH Lexi backend hosts. The runtime
 # channel switch (RUNTIME_CONFIG_URL -> {api_base}) means ONE published ZIP may
-# talk to EITHER api.getlexi.io (prod) or staging-api.getlexi.io (the CWS-review
+# talk to EITHER api.getlexi.io (prod) or api-staging.getlexi.io (the CWS-review
 # login window), flipped by a server-side env var — so both hosts must be
 # declared. api.getlexi.io is also the config control plane. api.anthropic.com
 # is dropped (the agent proxy now goes through the Lexi backend).
@@ -43,7 +43,7 @@ path = sys.argv[1]
 m = json.load(open(path))
 m['host_permissions'] = [
     'https://api.getlexi.io/*',
-    'https://staging-api.getlexi.io/*',
+    'https://api-staging.getlexi.io/*',
 ]
 # The Chrome Web Store assigns the published item's ID from its own key; a
 # baked-in "key" that doesn't match the item is rejected on upload. Drop it for
@@ -51,7 +51,7 @@ m['host_permissions'] = [
 m.pop('key', None)
 json.dump(m, open(path, 'w'), indent=2, ensure_ascii=False)
 open(path, 'a').write('\n')
-print('staged host_permissions: api.getlexi.io + staging-api.getlexi.io; key removed for store')
+print('staged host_permissions: api.getlexi.io + api-staging.getlexi.io; key removed for store')
 EOF
 fi
 

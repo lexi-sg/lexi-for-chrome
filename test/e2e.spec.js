@@ -260,7 +260,7 @@ test.describe('static checks (no browser, no API key required)', () => {
     // one build may talk to EITHER prod or staging, flipped server-side.
     // api.getlexi.io is also the config control plane (RUNTIME_CONFIG_URL).
     expect(manifest.host_permissions).toEqual(
-      expect.arrayContaining(['https://api.getlexi.io/*', 'https://staging-api.getlexi.io/*']),
+      expect.arrayContaining(['https://api.getlexi.io/*', 'https://api-staging.getlexi.io/*']),
     );
     // api.anthropic.com is no longer a host permission — the agent proxy goes
     // through the Lexi backend, not the browser straight to Anthropic.
