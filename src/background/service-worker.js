@@ -19,6 +19,7 @@ import {
   ANTHROPIC_VERSION,
   STORAGE_KEYS,
   RISKY_CLASSES,
+  AGENT_MODE_AVAILABLE,
 } from '../config.js';
 import * as permissionManager from './permission-manager.js';
 import { detach, detachAll, forgetDetached } from './cdp-driver.js';
@@ -302,6 +303,13 @@ async function handleMessage(message, senderTabIdHint) {
     }
 
     case MSG.REQUEST_AGENT_PERMISSION: {
+      // Chat-only lite build: Agent Mode does not exist and the manifest
+      // declares no optional debugger/tabs/<all_urls> permissions, so never
+      // attempt to request them (chrome.permissions.request would reject an
+      // undeclared permission anyway). Report "not granted" and stop.
+      if (!AGENT_MODE_AVAILABLE) {
+        return { type: MSG.AGENT_PERMISSION_RESULT, granted: false };
+      }
       const { origin } = message;
       let granted = false;
       try {

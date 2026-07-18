@@ -7,7 +7,7 @@
 //
 // ES module (loaded via <script type="module">) — safe to use import/export.
 
-import { MSG, MODELS, DEFAULT_MODEL, STORAGE_KEYS } from '../config.js';
+import { MSG, MODELS, DEFAULT_MODEL, STORAGE_KEYS, AGENT_MODE_AVAILABLE } from '../config.js';
 import { nanoAvailability } from '../agent/gemini-nano.js';
 
 const ALL_STORAGE_KEYS = Object.values(STORAGE_KEYS);
@@ -39,10 +39,29 @@ const siteGrantsEmpty = $('site-grants-empty');
 init();
 
 async function init() {
+  applyBuildFlags();
   populateModelSelect();
   wireEvents();
   await loadSettings();
   await refreshNanoRow();
+}
+
+/**
+ * Chat-only lite build: hide the agent-only settings (approval mode + the
+ * agent-enabled-sites list), since Agent Mode does not exist in this build.
+ * No-op in the full build, so the full options page is unchanged.
+ */
+function applyBuildFlags() {
+  if (AGENT_MODE_AVAILABLE) return;
+  hideSectionWithDivider(document.getElementById('approval-mode-group'));
+  hideSectionWithDivider(document.getElementById('site-grants-group'));
+}
+
+function hideSectionWithDivider(node) {
+  if (!node) return;
+  const prev = node.previousElementSibling;
+  if (prev && prev.classList.contains('divider')) prev.hidden = true;
+  node.hidden = true;
 }
 
 function populateModelSelect() {

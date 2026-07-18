@@ -257,6 +257,30 @@ worker ARE ES modules (`type: "module"`) and use `import`/`export` freely.
 
 ---
 
+## Builds
+
+Two Chrome Web Store packages come out of the same source, gated by the
+`AGENT_MODE_AVAILABLE` build flag in `src/config.js`:
+
+```bash
+scripts/package.sh          # FULL build  → dist/lexi-for-chrome-1.0.0.zip
+node scripts/build-lite.mjs # LITE build  → dist/lexi-for-chrome-lite-1.0.0.zip
+```
+
+- **`scripts/package.sh` — full build.** Chat + off-by-default, per-site Agent
+  Mode. Declares the optional `debugger` / `tabs` / `<all_urls>` permissions
+  (requested just-in-time), so CWS reviews it manually.
+- **`node scripts/build-lite.mjs` — chat-only lite build.** Stages the source
+  with `AGENT_MODE_AVAILABLE` rewritten to `false` (removing every agent-mode
+  entry point) and strips the optional permissions from the manifest. No
+  `debugger` permission means the fast automated-review lane.
+
+Why two tracks: shipping the lite build first gets the core "see + answer"
+product live quickly through fast review, then the full Agent-Mode build
+follows as a version update through manual review. See
+[STORE_LISTING.md](./STORE_LISTING.md) for the submission order. (`dist/` is
+gitignored; verify the lite build in a browser with `scripts/run-lite-e2e.sh`.)
+
 ## Testing (the Playwright e2e suite)
 
 ```bash

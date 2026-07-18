@@ -69,6 +69,24 @@ export const MSG = {
 export const PORT_NAME = 'lexi-sidepanel';
 
 // ---------------------------------------------------------------------------
+// Build flag — whether Agent Mode (Lexi clicking/typing/acting on the page)
+// is available in THIS build.
+//
+//   true  → the full extension: Chat + Agent modes, optional debugger/tabs/
+//           <all_urls> permissions requested just-in-time.
+//   false → the chat-only "lite" build produced by scripts/build-lite.mjs,
+//           which also strips the optional_permissions/optional_host_permissions
+//           from the manifest for a fast Chrome Web Store review lane.
+//
+// scripts/build-lite.mjs rewrites the SINGLE line below (`= true;` → `= false;`)
+// in its staged copy — the source here MUST stay `true` so the full build is
+// unchanged. Every agent-mode entry point (side-panel Agent tab, options agent
+// settings, the REQUEST_AGENT_PERMISSION handler) gates on this constant, so
+// the product behaves correctly with the flag either way.
+// ---------------------------------------------------------------------------
+export const AGENT_MODE_AVAILABLE = true;
+
+// ---------------------------------------------------------------------------
 // Anthropic API endpoints
 // ---------------------------------------------------------------------------
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';

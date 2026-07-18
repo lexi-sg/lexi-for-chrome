@@ -17,6 +17,7 @@ import {
   DEFAULT_MODEL,
   LIMITS,
   STORAGE_KEYS,
+  AGENT_MODE_AVAILABLE,
 } from '../config.js';
 import { streamMessage, imageBlock } from '../agent/anthropic-client.js';
 import { TOOLS, SEE_ONLY_TOOLS } from '../agent/tools.js';
@@ -623,9 +624,17 @@ function autosizePromptInput() {
 // ---------------------------------------------------------------------------
 
 el.modeChatBtn.addEventListener('click', () => setMode('chat'));
-el.modeAgentBtn.addEventListener('click', () => setMode('agent'));
+// Only wire the Agent tab in a build where Agent Mode exists. In the chat-only
+// lite build the button is also removed from the DOM in applyBuildFlags().
+if (AGENT_MODE_AVAILABLE) {
+  el.modeAgentBtn.addEventListener('click', () => setMode('agent'));
+}
 
 function setMode(mode) {
+  // In the chat-only lite build Agent Mode is not available — never switch to
+  // it even if some stray entry point tries to (defense-in-depth alongside the
+  // removed Agent tab and gated listener above).
+  if (mode === 'agent' && !AGENT_MODE_AVAILABLE) return;
   currentMode = mode;
   pendingScreenshotAction = null;
   el.costHint.hidden = true;
@@ -1115,7 +1124,21 @@ function renderAskUser(event) {
 // Boot
 // ---------------------------------------------------------------------------
 
+/**
+ * Chat-only lite build: physically remove the Agent tab from the DOM and hide
+ * the (now single-option) mode toggle, so there is no agent-mode entry point in
+ * the panel at all. No-op in the full build (AGENT_MODE_AVAILABLE === true), so
+ * the full panel is byte-for-byte unchanged.
+ */
+function applyBuildFlags() {
+  if (AGENT_MODE_AVAILABLE) return;
+  el.modeAgentBtn?.remove();
+  if (el.modeToggle) el.modeToggle.hidden = true;
+  if (el.agentEnableRow) el.agentEnableRow.hidden = true;
+}
+
 async function boot() {
+  applyBuildFlags();
   connectPort();
   populateModelPicker();
   renderQuickActions();

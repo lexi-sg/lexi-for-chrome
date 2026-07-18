@@ -6,6 +6,37 @@ relevant section into the Developer Dashboard field it's labeled with.
 
 ---
 
+## Two-track submission (read first)
+
+We ship the same product in two build tracks. Submit them in this order:
+
+1. **Submit the LITE build first** — `dist/lexi-for-chrome-lite-1.0.0.zip`
+   (built by `node scripts/build-lite.mjs`). This is the **chat-only** variant:
+   the "see + answer" product (explain clauses, flag risky terms, dates,
+   summaries, Screenshot & ask) with **Agent Mode compiled out**. Its manifest
+   declares **no `debugger`, `tabs`, or `<all_urls>` optional permissions** at
+   all, so it stays in the Chrome Web Store's **fast automated-review lane**.
+   Get the core product live and in users' hands quickly.
+
+2. **Then submit the FULL build as a version update** —
+   `dist/lexi-for-chrome-1.0.0.zip` (built by `scripts/package.sh`). This adds
+   the off-by-default, per-site **Agent Mode** and therefore re-declares the
+   `debugger` / `tabs` / `<all_urls>` **optional** permissions. Expect a
+   **manual review** because of `debugger`; the per-permission justifications
+   further down this file are written for exactly that review.
+
+Both builds share one codebase. The only differences in the lite build are a
+baked `AGENT_MODE_AVAILABLE = false` flag (which removes every agent-mode entry
+point) and the trimmed manifest — the store title, description, and all listing
+copy below apply verbatim to both. Which ZIP is which:
+
+| ZIP | Build command | Agent Mode | Optional permissions | Review lane |
+|---|---|---|---|---|
+| `dist/lexi-for-chrome-lite-1.0.0.zip` | `node scripts/build-lite.mjs` | compiled out | none | fast / automated |
+| `dist/lexi-for-chrome-1.0.0.zip` | `scripts/package.sh` | included (off by default) | `debugger`, `tabs`, `<all_urls>` | manual |
+
+---
+
 ## Single purpose statement
 
 > Lexi is an AI legal assistant for the web: it reads the legal document or
