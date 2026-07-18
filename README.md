@@ -1,6 +1,7 @@
 # Lexi for Chrome
 
-**An AI legal co-pilot in your browser side panel.** Explain a clause, flag
+**The AI operating system for law, in your browser side panel.** Legal
+review, contract analysis, and legal drafting help — explain a clause, flag
 risky terms, extract key dates, summarize a judgment, or ask about a
 screenshot — grounded in whatever page you're actually looking at. No
 account. No Lexi server. Bring your own Anthropic (Claude) API key.

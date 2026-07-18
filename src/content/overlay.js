@@ -23,7 +23,7 @@
 
   // 12-colour cycling palette for the numbered mark boxes.
   var PALETTE = [
-    '#5B5BD6', '#E5484D', '#30A46C', '#F5A623',
+    '#775AD8', '#DC2626', '#16A34A', '#F59E0B',
     '#3B82F6', '#D6409F', '#12B5B0', '#F76B15',
     '#8B5CF6', '#EAB308', '#EC4899', '#14B8A6',
   ];
@@ -45,14 +45,14 @@
     '}' +
     '.lexi-acting-border {' +
     '  position: fixed; top: 0; left: 0; right: 0; height: 4px;' +
-    '  background: #E5484D; display: none; pointer-events: none;' +
+    '  background: #DC2626; display: none; pointer-events: none;' +
     '}' +
     '.lexi-acting-border.lexi-on {' +
     '  display: block; animation: lexi-pulse 1.4s ease-in-out infinite;' +
     '}' +
     '.lexi-acting-pill {' +
     '  position: fixed; top: 10px; left: 50%; transform: translateX(-50%);' +
-    '  background: #E5484D; color: #fff;' +
+    '  background: #DC2626; color: #fff;' +
     '  font: 600 12px -apple-system, "Segoe UI", Roboto, sans-serif;' +
     '  padding: 6px 14px; border-radius: 999px; display: none;' +
     '  align-items: center; gap: 6px; pointer-events: none;' +

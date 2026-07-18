@@ -47,22 +47,23 @@ img {
 /* ============================ DESIGN TOKENS ============================ */
 
 :root {
-  /* Light theme (default) */
+  /* Light theme (default) — Lexi app tokens (app.getlexi.io, slate/ink) */
   --lexi-bg: #ffffff;
-  --lexi-surface: #f7f7fb;
-  --lexi-text: #1a1a2e;
-  --lexi-muted: #6b6b85;
-  --lexi-border: #e4e4ef;
-  --lexi-accent: #5b5bd6;
-  --lexi-accent-strong: #4a3aff;
-  --lexi-accent-tint: #eeeefb;
-  --lexi-risk: #e5484d;
-  --lexi-warn: #f5a623;
-  --lexi-ok: #30a46c;
+  --lexi-surface: #f8fafc;
+  --lexi-text: #0f172a;
+  --lexi-muted: #64748b;
+  --lexi-border: #e2e8f0;
+  --lexi-accent: #775ad8;
+  --lexi-accent-strong: #6434d5;
+  --lexi-accent-tint: #f6f7fe;
+  --lexi-risk: #dc2626;
+  --lexi-warn: #f59e0b;
+  --lexi-ok: #16a34a;
   --lexi-r: 10px;
 
-  --lexi-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
-  --lexi-shadow-md: 0 4px 16px rgba(20, 20, 30, 0.1);
+  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --lexi-shadow-md: 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 34px rgba(15, 23, 42, 0.06);
   --lexi-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter,
     Helvetica, Arial, sans-serif;
   --lexi-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -71,14 +72,15 @@ img {
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --lexi-bg: #14141c;
-    --lexi-surface: #1e1e29;
-    --lexi-text: #ececf5;
-    --lexi-muted: #9a9ab4;
-    --lexi-border: #2c2c3b;
-    --lexi-accent: #8b8bf0;
-    --lexi-accent-strong: #a5a5f7;
-    --lexi-accent-tint: #21213a;
+    /* Derived from the app's one true dark surface: the navy nav rail */
+    --lexi-bg: #0e1522;
+    --lexi-surface: #232e40;
+    --lexi-text: #f1f5f9;
+    --lexi-muted: #94a3b8;
+    --lexi-border: #2e3a4d;
+    --lexi-accent: #aba4ea;
+    --lexi-accent-strong: #c9c8f4;
+    --lexi-accent-tint: rgba(171, 164, 234, 0.14);
     --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
     --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
@@ -87,26 +89,30 @@ img {
 /* Explicit override wins over the OS setting either way. */
 :root[data-theme="light"] {
   --lexi-bg: #ffffff;
-  --lexi-surface: #f7f7fb;
-  --lexi-text: #1a1a2e;
-  --lexi-muted: #6b6b85;
-  --lexi-border: #e4e4ef;
-  --lexi-accent: #5b5bd6;
-  --lexi-accent-strong: #4a3aff;
-  --lexi-accent-tint: #eeeefb;
-  --lexi-shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
-  --lexi-shadow-md: 0 4px 16px rgba(20, 20, 30, 0.1);
+  --lexi-surface: #f8fafc;
+  --lexi-text: #0f172a;
+  --lexi-muted: #64748b;
+  --lexi-border: #e2e8f0;
+  --lexi-accent: #775ad8;
+  --lexi-accent-strong: #6434d5;
+  --lexi-accent-tint: #f6f7fe;
+  --lexi-risk: #dc2626;
+  --lexi-warn: #f59e0b;
+  --lexi-ok: #16a34a;
+  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --lexi-shadow-md: 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 12px 34px rgba(15, 23, 42, 0.06);
 }
 
 :root[data-theme="dark"] {
-  --lexi-bg: #14141c;
-  --lexi-surface: #1e1e29;
-  --lexi-text: #ececf5;
-  --lexi-muted: #9a9ab4;
-  --lexi-border: #2c2c3b;
-  --lexi-accent: #8b8bf0;
-  --lexi-accent-strong: #a5a5f7;
-  --lexi-accent-tint: #21213a;
+  --lexi-bg: #0e1522;
+  --lexi-surface: #232e40;
+  --lexi-text: #f1f5f9;
+  --lexi-muted: #94a3b8;
+  --lexi-border: #2e3a4d;
+  --lexi-accent: #aba4ea;
+  --lexi-accent-strong: #c9c8f4;
+  --lexi-accent-tint: rgba(171, 164, 234, 0.14);
   --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
 }

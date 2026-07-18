@@ -48,7 +48,7 @@ copy below apply verbatim to both. Which ZIP is which:
 
 ## Store title
 
-**Lexi — AI Legal Assistant for the Web**
+**Lexi — The AI Operating System for Law**
 
 ## Category
 
@@ -62,10 +62,11 @@ Productivity
 
 ## Detailed description
 
-> Lexi is an AI legal assistant that lives in your Chrome side panel and
-> understands whatever legal document you're looking at — a contract sent
-> as a Google Doc, a scroll-forever Terms of Service, a lease, an NDA, a
-> court judgment, or an e-filing form.
+> Lexi is the AI operating system for law, in your Chrome side panel —
+> covering legal review, contract analysis, and legal drafting for
+> whatever legal document you're looking at: a contract sent as a Google
+> Doc, a scroll-forever Terms of Service, a lease, an NDA, a court
+> judgment, or an e-filing form.
 >
 > **WHAT IT DOES (see + answer):**
 > - **Explain this clause** — plain-English, jurisdiction-neutral, jargon
@@ -104,9 +105,10 @@ Productivity
 
 ## Keywords
 
-legal AI · contract review · terms of service · AI legal assistant ·
-clause explainer · risk flagging · Claude · BYOK · side panel · legal
-document analysis
+legal AI · legal review · contract review · contract analysis · legal
+drafting · judgment summary · legal research · law OS / legal operating
+system · terms of service · AI legal assistant · clause explainer · risk
+flagging · Claude · BYOK · side panel · legal document analysis
 
 ---
 

@@ -70,9 +70,16 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const FIXTURES_FILE = path.join(REPO_ROOT, 'test', 'test-fixtures.html');
-const OUT_DIR = path.join(REPO_ROOT, 'assets', 'store');
 
 const STATIC_ONLY = process.argv.includes('--static-only');
+// --out-dir=<path>: redirect output away from the final assets/store/
+// screenshot-*.png files (used e.g. to capture raw, unframed product shots
+// into assets/raw-captures/ for the frame-embedding pipeline in
+// assets/screenshot-frames/ without clobbering the branded store PNGs).
+const outDirArg = process.argv.find((a) => a.startsWith('--out-dir='));
+const OUT_DIR = outDirArg
+  ? path.resolve(REPO_ROOT, outDirArg.slice('--out-dir='.length))
+  : path.join(REPO_ROOT, 'assets', 'store');
 
 // Mirrors src/config.js's STORAGE_KEYS byte-for-byte (this is a plain Node
 // script, not an ES-module-aware content script, and can't import an

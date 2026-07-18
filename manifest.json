@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Lexi — AI Legal Assistant for the Web",
+  "name": "Lexi — The AI Operating System for Law",
   "short_name": "Lexi",
   "version": "1.0.0",
-  "description": "AI legal co-pilot in your side panel. Explain clauses, flag risky terms, summarize judgments — on the page you're on. Your own key.",
+  "description": "AI legal assistant: legal review, contract analysis, legal drafting help, risk flags & judgment summaries on any page. Private.",
   "minimum_chrome_version": "120",
   "background": {
     "service_worker": "src/background/service-worker.js",
