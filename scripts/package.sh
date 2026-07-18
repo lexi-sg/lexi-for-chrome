@@ -15,6 +15,21 @@ cp manifest.json "$STAGE/"
 cp -R icons "$STAGE/icons"
 cp -R src "$STAGE/src"
 
+# The store build must talk to prod (api.getlexi.io). The source keeps
+# BUILD_CHANNEL='staging' so an unpacked dev build hits staging out of the box;
+# rewrite the STAGED copy only. Override with CHANNEL=staging for a staging ZIP.
+CHANNEL="${CHANNEL:-prod}"
+python3 - "$STAGE/src/config.js" "$CHANNEL" <<'EOF'
+import re, sys
+path, channel = sys.argv[1], sys.argv[2]
+src = open(path).read()
+new, n = re.subn(r"export const BUILD_CHANNEL = '[^']*';",
+                 f"export const BUILD_CHANNEL = '{channel}';", src)
+assert n == 1, f"expected exactly one BUILD_CHANNEL assignment, found {n}"
+open(path, 'w').write(new)
+print(f"staged build channel: {channel}")
+EOF
+
 # Sanity: manifest must be valid JSON and every referenced file must exist.
 python3 - "$STAGE" <<'EOF'
 import json, os, sys

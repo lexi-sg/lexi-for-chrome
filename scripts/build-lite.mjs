@@ -94,7 +94,23 @@ if (occurrences !== 1) {
       'Aborting so a lite build can never silently ship with Agent Mode enabled.',
   );
 }
-fs.writeFileSync(configPath, configSrc.replace(FLAG_TRUE, FLAG_FALSE));
+let litewritten = configSrc.replace(FLAG_TRUE, FLAG_FALSE);
+
+// The store build must talk to prod (api.getlexi.io). Source keeps
+// BUILD_CHANNEL='staging' for unpacked dev; rewrite the staged copy only.
+// Override with CHANNEL=staging for a staging ZIP.
+const channel = process.env.CHANNEL || 'prod';
+const channelMatches = litewritten.match(/export const BUILD_CHANNEL = '[^']*';/g) || [];
+if (channelMatches.length !== 1) {
+  throw new Error(
+    `Expected exactly one BUILD_CHANNEL assignment in src/config.js, found ${channelMatches.length}.`,
+  );
+}
+litewritten = litewritten.replace(
+  /export const BUILD_CHANNEL = '[^']*';/,
+  `export const BUILD_CHANNEL = '${channel}';`,
+);
+fs.writeFileSync(configPath, litewritten);
 
 // ---------------------------------------------------------------------------
 // 3. Sanity checks. Re-run package.sh's manifest-reference check (every
