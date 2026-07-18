@@ -27,7 +27,9 @@
     #lease  — residential lease excerpt with an auto-renewal clause, a broad
               one-sided indemnity clause, and an arbitration + class-action-
               waiver clause (deliberately seeded HIGH-severity risk targets
-              for the "Flag risky terms" quick action).
+              for the "Flag risky terms" quick action), plus a rent clause
+              and a security-deposit-return clause (dated/neutral obligations
+              grounding the "Key dates & obligations" quick action).
     #tos    — a short clickwrap Terms of Service block with a unilateral-
               amendment clause.
     #hidden-injection — a visually-hidden (but DOM-present, non-[hidden],
@@ -56,7 +58,7 @@
     --bg: #ffffff;
     --muted: #6b6b85;
     --border: #e4e4ef;
-    --accent: #5b5bd6;
+    --accent: #0f172a;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -64,7 +66,7 @@
       --bg: #14141c;
       --muted: #9a9ab4;
       --border: #2c2c3b;
-      --accent: #8b8bf0;
+      --accent: #475569;
     }
   }
   html, body {
@@ -168,6 +170,15 @@
         term of twelve (12) months.
       </p>
 
+      <div class="clause" id="clause-rent">
+        <span class="clause-label">Clause 3 — Rent</span>
+        Tenant shall pay Rent, in the amount stated in the Lease Summary, on
+        the first (1st) day of each calendar month, in advance, without
+        deduction or setoff. Any payment received after the fifth (5th) day
+        of the month is late and subject to the late fee stated in the
+        Lease Summary.
+      </div>
+
       <div class="clause" id="clause-auto-renewal">
         <span class="clause-label">Clause 7 — Renewal</span>
         This Lease shall automatically renew for successive one-year terms
@@ -176,6 +187,15 @@
         acknowledges that failure to provide timely written notice will
         result in automatic renewal of this Lease at the then-prevailing
         rental rate, without any further action required by Landlord.
+      </div>
+
+      <div class="clause" id="clause-security-deposit">
+        <span class="clause-label">Clause 9 — Security Deposit</span>
+        Landlord shall return the Security Deposit, less any lawful
+        deductions for unpaid rent or damage beyond normal wear and tear,
+        within thirty (30) days after the later of the end of the Lease
+        term or Tenant's surrender of the Premises, together with an
+        itemized statement of any deductions.
       </div>
 
       <div class="clause" id="clause-indemnity">

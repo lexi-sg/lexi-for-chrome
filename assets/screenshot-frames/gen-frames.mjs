@@ -21,14 +21,12 @@ function shotB64(n) {
 
 const FRAMES = [
   // cropW = how much of the raw 1280-wide capture's left edge to keep
-  // (proportionally re-expanded to fill the mockup width). Screenshots
-  // 1/2/4 use the full capture; 3 (options page) has real UI only in
-  // the left ~510px with the rest dead white space, so it is cropped
-  // to a tighter "settings card" width instead of showing a mostly-empty
-  // browser window.
+  // (proportionally re-expanded to fill the mockup width). All four
+  // screenshots are split scenes (fixture page + real side panel) at the
+  // full capture width.
   { n: 1, caption: 'Ask about any page you are reading', cropW: 1280 },
   { n: 2, caption: 'Flag risky terms before you sign', cropW: 1280 },
-  { n: 3, caption: 'Private by design — your data stays yours', cropW: 520 },
+  { n: 3, caption: 'Key dates & obligations, extracted instantly', cropW: 1280 },
   { n: 4, caption: 'Agent Mode asks before it acts', cropW: 1280 },
 ];
 

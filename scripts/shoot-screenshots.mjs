@@ -14,8 +14,9 @@
 // composed as a believable "browser window" at exactly 1280x800: a thin fake
 // chrome/tab bar on top, the underlying page fixture on the left, and the
 // real side panel docked on the right — mirroring how Lexi actually looks
-// docked in Chrome. (screenshot-3, the options/onboarding page, uses the
-// same chrome bar over the full-width options page instead of a split.)
+// docked in Chrome. All four are split scenes over a live fixture (no
+// onboarding/options-page screenshot — a settings screen is not a headline
+// feature shot).
 //
 // ---------------------------------------------------------------------------
 // TWO MODES
@@ -23,16 +24,18 @@
 // --static-only (safe to run any time, including while the extension is
 //   mid-debug): never calls the live Anthropic API and never depends on
 //   sidepanel.js's/agent-loop.js's own message-handling logic being correct.
-//   It loads the real sidepanel.html/options.html (so the real CSS, stable
-//   ids, and layout are what's on screen), then injects DOM nodes *directly*
+//   It loads the real sidepanel.html (so the real CSS, stable ids, and
+//   layout are what's on screen), then injects DOM nodes *directly*
 //   into #messages via page.evaluate(), using the EXACT class-name contract
 //   chat-render.js's real renderer produces (.lexi-msg/.lexi-msg-user/
 //   .lexi-msg-assistant/.lexi-msg-body/.lexi-disclaimer-line for chat,
 //   .lexi-risk-item/.lexi-risk-{high,med,low}/.lexi-risk-dot/.lexi-risk-body
-//   for "Flag risky terms", and a clone of #confirm-card-template's own
-//   .lexi-confirm-card markup for the agent confirmation scenario — see
-//   src/sidepanel/chat-render.js and src/sidepanel/sidepanel.html, read but
-//   not modified by this script). This means the screenshots are pixel-
+//   for "Flag risky terms", .lexi-table-scroll/table/thead/tbody (renderTable's
+//   own markup) for "Key dates & obligations", and a clone of
+//   #confirm-card-template's own .lexi-confirm-card markup for the agent
+//   confirmation scenario — see src/sidepanel/chat-render.js and
+//   src/sidepanel/sidepanel.html, read but not modified by this script). This
+//   means the screenshots are pixel-
 //   faithful to what the real renderer would produce, without needing
 //   sidepanel.js's boot()/runQuickAction()/agent-loop.js wiring to actually
 //   work end-to-end. Demo copy is realistic and lease/e-filing-fixture-
@@ -136,16 +139,7 @@ async function main() {
     const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
     console.log(`Loaded extension "${manifest.name}" (${extensionId})`);
 
-    // ---- Screenshot 3 FIRST, deliberately, with NO API key seeded yet -----
-    // so options.html renders its real "Add your Anthropic API key"
-    // onboarding card (the BYOK positioning) rather than the post-onboarding
-    // settings summary. This is a genuinely no-JS-required screenshot: the
-    // onboarding card is the default state of static HTML/CSS with an empty
-    // chrome.storage.local, so it works identically in --static-only and
-    // live mode.
-    await shootOptionsPage(context, extensionId, path.join(OUT_DIR, 'screenshot-3.png'));
-
-    // ---- Now seed the key + settings + agent-mode site grant, mirroring --
+    // ---- Seed the key + settings + agent-mode site grant, mirroring --------
     // test/e2e.spec.js's beforeAll exactly (SITE_GRANTS shape from
     // permission-manager.js: { [origin]: { agentEnabled, classes, expiresAt,
     // onceGrants } }).
@@ -229,6 +223,25 @@ async function main() {
       outPath: path.join(OUT_DIR, 'screenshot-2.png'),
     });
 
+    // ---- Screenshot 3: "Key dates & obligations" on the lease fixture -----
+    if (STATIC_ONLY) {
+      await clearMessages(panel);
+      await injectKeyDatesResult(panel);
+    } else {
+      await clearMessages(panel);
+      await runLiveKeyDates(panel);
+    }
+    await tidyPanelChrome(panel, {
+      contextTitle: 'Residential Lease Agreement (Test Fixture)',
+      actingBarText: null,
+    });
+    await composeSplitScene(context, {
+      leftPage: fixturesPage,
+      rightPage: panel,
+      urlLabel: 'acme-rentals.example/lease-agreement',
+      outPath: path.join(OUT_DIR, 'screenshot-3.png'),
+    });
+
     // ---- Screenshot 4: agent-mode confirmation card -----------------------
     if (STATIC_ONLY) {
       await clearMessages(panel);
@@ -285,25 +298,6 @@ function startFixturesServer() {
       const fixturesUrl = `http://127.0.0.1:${port}/test-fixtures.html`;
       resolve({ fixturesServer, fixturesUrl, fixturesOrigin: new URL(fixturesUrl).origin });
     });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Options/onboarding page screenshot (full-width, no split needed).
-// ---------------------------------------------------------------------------
-
-async function shootOptionsPage(context, extensionId, outPath) {
-  const page = await context.newPage();
-  await page.setViewportSize({ width: SCENE.width, height: SCENE.height - SCENE.chromeBarHeight });
-  await page.goto(`chrome-extension://${extensionId}/src/options/options.html`, { waitUntil: 'load' });
-  await page.waitForTimeout(150); // let webfont-free layout settle
-  const shot = await page.screenshot();
-  await page.close();
-  await composeScene({
-    context,
-    panes: [{ buffer: shot, width: SCENE.width }],
-    urlLabel: 'Lexi — Settings & Onboarding',
-    outPath,
   });
 }
 
@@ -497,6 +491,83 @@ async function injectRiskFlagResult(panel) {
   );
 }
 
+// Builds the "Key dates & obligations" quick-action result using the EXACT
+// markup contract renderTable() in chat-render.js produces for a markdown
+// table response (.lexi-table-scroll > table > thead/tbody), matching the
+// four columns the real prompt template (src/prompts/quick-action-templates.js,
+// id: 'dates') asks the model for: Party | Obligation | Deadline/Trigger |
+// Condition. Every row here is grounded in an actual clause on the lease
+// fixture (test/test-fixtures.html: Clause 3 — Rent, Clause 7 — Renewal,
+// Clause 9 — Security Deposit), never invented.
+async function injectKeyDatesResult(panel) {
+  await panel.evaluate(
+    ({ userText, intro, headers, rows }) => {
+      const messages = document.getElementById('messages');
+      if (!messages) return;
+
+      const userEl = document.createElement('div');
+      userEl.className = 'lexi-msg lexi-msg-user';
+      userEl.textContent = userText;
+      messages.appendChild(userEl);
+
+      const root = document.createElement('div');
+      root.className = 'lexi-msg lexi-msg-assistant';
+      const body = document.createElement('div');
+      body.className = 'lexi-msg-body';
+
+      const p = document.createElement('p');
+      p.textContent = intro;
+      body.appendChild(p);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'lexi-table-scroll';
+      const table = document.createElement('table');
+
+      const thead = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const cell of headers) {
+        const th = document.createElement('th');
+        th.textContent = cell;
+        headRow.appendChild(th);
+      }
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const cell of row) {
+          const td = document.createElement('td');
+          td.textContent = cell;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+      body.appendChild(wrap);
+      root.appendChild(body);
+
+      const disclaimer = document.createElement('div');
+      disclaimer.className = 'lexi-disclaimer-line';
+      disclaimer.textContent = 'Not legal advice.';
+      root.appendChild(disclaimer);
+      messages.appendChild(root);
+      messages.scrollTop = messages.scrollHeight;
+    },
+    {
+      userText: 'Key dates & obligations',
+      intro: 'Here are the dates, deadlines, and ongoing obligations stated in this lease:',
+      headers: ['Party', 'Obligation', 'Deadline/Trigger', 'Condition'],
+      rows: [
+        ['Tenant', 'Notice', '60 days prior', 'No renewal'],
+        ['Tenant', 'Pay rent', '1st of month', 'After 5th'],
+        ['Landlord', 'Deposit', 'Within 30 days', 'Itemized'],
+      ],
+    },
+  );
+}
+
 async function injectAgentConfirmCard(panel, fixturesPage) {
   // Make the underlying fixtures page look mid-task: the agent has already
   // typed the claimant name and is now paused before the risky SUBMIT action.
@@ -559,6 +630,11 @@ async function runLiveExplainClause(panel) {
 async function runLiveFlagRisk(panel) {
   await panel.locator('#quick-actions').getByRole('button', { name: /flag risky/i }).click();
   await panel.locator('.lexi-risk-item').first().waitFor({ timeout: 60_000 });
+}
+
+async function runLiveKeyDates(panel) {
+  await panel.locator('#quick-actions').getByRole('button', { name: /key dates/i }).click();
+  await panel.locator('.lexi-table-scroll table').first().waitFor({ timeout: 60_000 });
 }
 
 async function runLiveAgentConfirm(panel, fixturesPage) {
