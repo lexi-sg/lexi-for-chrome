@@ -597,6 +597,26 @@ body {
   white-space: nowrap;
 }
 
+/* Attach-state badge: shows whether Lexi is driving the tab with trusted CDP
+   input events ("Controlling tab") or the synthetic-event compatibility
+   fallback. Sits between the intent text and the Stop button. */
+#acting-control {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+
+#acting-control.lexi-control-fallback {
+  background: rgba(255, 255, 255, 0.12);
+  border-style: dashed;
+}
+
 #stop-btn {
   flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.2);

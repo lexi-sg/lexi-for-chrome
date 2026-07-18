@@ -22,8 +22,23 @@ import {
   AGENT_MODE_AVAILABLE,
 } from '../config.js';
 import * as permissionManager from './permission-manager.js';
-import { detach, detachAll, forgetDetached } from './cdp-driver.js';
+import {
+  attach,
+  detach,
+  detachAll,
+  forgetDetached,
+  isAttached,
+  isCdpAvailable,
+  wasEverAttached,
+} from './cdp-driver.js';
 import { execute as executeTool } from './action-executor.js';
+
+// Read-only observability of the CDP attach state, for the acting-bar UI and
+// the e2e harness (which asserts the trusted-input path really attached and
+// then detached). Exposing two pure state-readers on the SW global is safe:
+// the service-worker global is not reachable from any web page, and neither
+// function mutates anything.
+self.__lexiCdp = { isAttached, wasEverAttached };
 
 // ---------------------------------------------------------------------------
 // Content-script injection order (open_risks: no bundler => classic scripts
@@ -244,6 +259,35 @@ async function execTool(message, tabId) {
 }
 
 // ---------------------------------------------------------------------------
+// Control-mode announcement — attach the debugger up-front for an agent run and
+// tell the panel whether we're driving the tab with TRUSTED CDP input events
+// or the synthetic-event compatibility fallback.
+// ---------------------------------------------------------------------------
+
+async function announceControlMode(tabId) {
+  let cdp = false;
+  try {
+    if (isCdpAvailable()) {
+      const origin = await getTabOrigin(tabId).catch(() => null);
+      const enabled = origin ? await permissionManager.isAgentEnabled(origin) : false;
+      if (enabled) {
+        await attach(tabId);
+        cdp = isAttached(tabId);
+      }
+    }
+  } catch (_e) {
+    // DebuggerBusyError (DevTools open), permission denied, or a closed tab:
+    // fall back to synthetic events. The forgetDetached/attachedTabs bookkeeping
+    // in cdp-driver already left our state clean on a failed attach.
+    cdp = false;
+  }
+  broadcast(
+    { type: MSG.AGENT_ACTING, tabId, cdp, control: cdp ? 'trusted' : 'fallback' },
+    tabId,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Central message handler — shared by the Port channel (side panel) and the
 // one-off chrome.runtime.onMessage channel (options page).
 // ---------------------------------------------------------------------------
@@ -350,6 +394,14 @@ async function handleMessage(message, senderTabIdHint) {
       // overlay is torn down on AGENT_STOP / onDetach below.
       if (tabId !== undefined && tabId !== null) {
         sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: true }).catch(() => {});
+        // Attach the debugger up-front, the way Claude for Chrome does (attach
+        // at task start, not lazily on the first click), so Chrome's debugging
+        // infobar and the panel's "controlling tab (trusted input)" state
+        // appear immediately and any attach failure (DevTools already open,
+        // permission not granted) surfaces before the first action rather than
+        // mid-run. Best-effort + fire-and-forget: on any failure we simply stay
+        // on the synthetic-event fallback and tell the panel so.
+        void announceControlMode(tabId);
       }
       return null;
     }

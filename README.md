@@ -187,12 +187,21 @@ source of truth other modules are built against.
 Agent Mode (click/type/scroll/navigate on your behalf) is **off by default
 everywhere**. To use it on a site, you explicitly click "Enable agent
 actions on this site", which requests the **optional** `debugger` permission
-just for that action and stores a per-origin grant. While active:
+just for that action and stores a per-origin grant. When a task starts,
+Lexi attaches a `chrome.debugger` (CDP) session to that one tab — the same
+mechanism Claude for Chrome uses — and drives every click, keystroke, and
+scroll as **real, trusted native input events** (`isTrusted === true`;
+live-verified by the e2e suite's CDP scenario). If the debugger can't
+attach (e.g. DevTools is already open on that tab), Lexi degrades to a
+synthetic-DOM-event compatibility fallback and says so in the acting bar.
+While active:
 
 - A persistent red "Lexi is acting — `<intent>`" bar with a **Stop** button
-  sits above the composer, `overlay.js` paints a pulsing red border on the
-  page itself, and Chrome's own unsuppressable debugging infobar is present
-  — three redundant signals that something is happening.
+  sits above the composer, with a control-mode badge ("Controlling tab" =
+  trusted CDP input; "Compatibility mode" = synthetic fallback);
+  `overlay.js` paints a pulsing red border on the page itself, and Chrome's
+  own unsuppressable "started debugging this browser" infobar is present —
+  three redundant signals that something is happening.
 - Anything in `RISKY_CLASSES` (`SUBMIT`, `NAVIGATE_NEW_DOMAIN`, `PAY`,
   `SEND_MESSAGE`, `UPLOAD`, `DOWNLOAD`, `DELETE`) always pauses for your
   explicit confirmation, regardless of approval mode.

@@ -137,6 +137,38 @@ function buildTestExtensionCopy() {
 }
 
 // ---------------------------------------------------------------------------
+// TEST-ONLY EXTENSION COPY WITH THE DEBUGGER PATH PRE-GRANTED (Scenario D)
+// ---------------------------------------------------------------------------
+// Scenario D proves the CDP trusted-input path. That path only runs when the
+// optional "debugger" permission is actually granted, which — like the
+// optional "<all_urls>" host permission — cannot be granted programmatically in
+// a fresh disposable profile (a non-gesture chrome.permissions.request throws,
+// and a gesture-initiated one pops a native bubble no page-automation API can
+// click). So this builds a SECOND test-only copy that PROMOTES the
+// already-declared optional "debugger" and "tabs" permissions into
+// `permissions` (and "<all_urls>" into host_permissions), pre-granting exactly
+// what the product requests at runtime. Every byte of product CODE is identical
+// to the shipped build — only the access grant differs, only in this copy. The
+// static manifest test above still asserts the REAL manifest keeps debugger/
+// tabs OPTIONAL and out of the base permissions.
+function buildCdpTestExtensionCopy() {
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexi-cdp-ext-'));
+  for (const entry of ['manifest.json', 'icons', 'src']) {
+    fs.cpSync(path.join(REPO_ROOT, entry), path.join(dir, entry), { recursive: true });
+  }
+  const manifestPath = path.join(dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.permissions = [...new Set([...(manifest.permissions || []), 'debugger', 'tabs'])];
+  manifest.host_permissions = [...(manifest.host_permissions || []), '<all_urls>'];
+  // Promoted into `permissions`, so they no longer belong in the optional sets.
+  delete manifest.optional_permissions;
+  delete manifest.optional_host_permissions;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  return dir;
+}
+
+// ---------------------------------------------------------------------------
 // ORG-LEVEL CORS BLOCK → OPTIONAL NODE-SIDE RELAY (REAL API, REAL RESPONSES)
 // ---------------------------------------------------------------------------
 // Some Anthropic organizations (those with custom data-retention settings)
@@ -228,6 +260,16 @@ test.describe('static checks (no browser, no API key required)', () => {
     // No static content_scripts block — all injection must be programmatic
     // under activeTab (spec.manifest requirement).
     expect(manifest.content_scripts).toBeUndefined();
+    // debugger + tabs MUST stay OPTIONAL (requested just-in-time when the user
+    // enables Agent Mode) — never in the base `permissions`. The CDP e2e
+    // scenario promotes them into `permissions` in a TEST-ONLY copy; the
+    // shipped manifest here must be untouched. This is the guard that a future
+    // change can't silently make the debugger permission mandatory at install.
+    expect(manifest.optional_permissions).toEqual(expect.arrayContaining(['debugger', 'tabs']));
+    expect(manifest.permissions).not.toContain('debugger');
+    expect(manifest.permissions).not.toContain('tabs');
+    expect(manifest.optional_host_permissions).toEqual(expect.arrayContaining(['<all_urls>']));
+    expect(manifest.host_permissions).not.toContain('<all_urls>');
   });
 
   test('every JS file in src/ (and this test suite) parses cleanly', () => {
@@ -264,10 +306,14 @@ test.describe('static checks (no browser, no API key required)', () => {
       'id="filing-password"',
       'id="submit-btn"',
       'id="hidden-injection"',
+      'id="counter-btn"',
       'auto-renew',
       'indemnif',
       'arbitration',
       'IGNORE ALL PREVIOUS INSTRUCTIONS',
+      // The trusted-input recorder the CDP scenario reads.
+      '__lexiEvents',
+      'isTrusted',
     ]) {
       expect(html.toLowerCase()).toContain(needle.toLowerCase());
     }
@@ -596,6 +642,235 @@ test.describe('Lexi for Chrome — end-to-end (extension + real Anthropic API)',
     } finally {
       await watcher2.stop();
     }
+  });
+});
+
+// ============================================================================
+// Scenario D — CDP trusted-input path (the REAL "control the tab like Claude").
+//
+// Unlike Scenario C (which runs the synthetic-event fallback because the base
+// test copy never grants "debugger"), this block loads a SECOND test copy with
+// the debugger/tabs permissions PROMOTED into `permissions` (see
+// buildCdpTestExtensionCopy), so src/background/cdp-driver.js's isCdpAvailable()
+// is true, ensureAttached() actually attaches chrome.debugger, and every
+// mutating tool call dispatches TRUSTED CDP input events. It proves, live:
+//   (a) chrome.debugger actually attached to the fixtures tab (SW-side latch),
+//   (b) the button's visible state changed AND the field got the value,
+//   (c) the recorded page events are isTrusted === true for the CDP-driven
+//       click and keystrokes — the definitive proof this is real trusted input
+//       (like Claude for Chrome), not synthetic DOM dispatch, and
+//   (d) the debugger detached at run end.
+// A separate persistent context is required because the pre-granted permission
+// set differs from Scenario A–C's copy; it runs serially after them.
+// ============================================================================
+
+test.describe('Lexi for Chrome — CDP trusted-input control path (Scenario D)', () => {
+  /** @type {import('@playwright/test').BrowserContext} */
+  let context;
+  /** @type {import('@playwright/test').Page} */
+  let fixturesPage;
+  /** @type {import('@playwright/test').Page} */
+  let panel;
+  /** @type {import('@playwright/test').Worker} */
+  let sw;
+  /** @type {http.Server} */
+  let fixturesServer;
+  let fixturesUrl;
+  let fixturesOrigin;
+  let extensionId;
+  let tabId;
+  let userDataDir;
+  let testExtensionDir;
+
+  test.beforeAll(async () => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    test.skip(!apiKey, 'ANTHROPIC_API_KEY is not set — skipping the live CDP e2e scenario.');
+
+    const fixtureHtml = fs.readFileSync(FIXTURES_FILE);
+    fixturesServer = http.createServer((req, res) => {
+      if (req.url === '/' || req.url?.startsWith('/test-fixtures.html')) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(fixtureHtml);
+      } else {
+        res.writeHead(404);
+        res.end('not found');
+      }
+    });
+    await new Promise((resolve) => fixturesServer.listen(0, '127.0.0.1', resolve));
+    const { port } = fixturesServer.address();
+    fixturesUrl = `http://127.0.0.1:${port}/test-fixtures.html`;
+    fixturesOrigin = new URL(fixturesUrl).origin;
+
+    // The CDP-enabled copy: debugger/tabs pre-granted in `permissions`.
+    testExtensionDir = buildCdpTestExtensionCopy();
+    userDataDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'lexi-cdp-e2e-'));
+    context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      channel: 'chromium',
+      args: [
+        `--disable-extensions-except=${testExtensionDir}`,
+        `--load-extension=${testExtensionDir}`,
+        '--no-first-run',
+      ],
+    });
+
+    if (await orgBlocksBrowserCalls(apiKey)) {
+      await installAnthropicRelay(context);
+    }
+
+    [sw] = context.serviceWorkers();
+    if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 15000 });
+    extensionId = new URL(sw.url()).host;
+
+    // Sanity: the copy really did pre-grant the debugger permission, so the CDP
+    // path is reachable at all (otherwise this scenario would silently degrade
+    // to the same synthetic fallback Scenario C already covers).
+    const manifest = await sw.evaluate(() => chrome.runtime.getManifest());
+    expect(manifest.permissions, 'CDP test copy must pre-grant the debugger permission').toContain('debugger');
+    const hasDebuggerApi = await sw.evaluate(() => typeof chrome.debugger !== 'undefined');
+    expect(hasDebuggerApi, 'chrome.debugger must be defined in the CDP test copy').toBe(true);
+
+    await sw.evaluate(
+      async ({ keys, apiKey: k, origin }) => {
+        await chrome.storage.local.set({
+          [keys.API_KEY]: k,
+          [keys.MODEL]: 'claude-sonnet-5',
+          [keys.APPROVAL_MODE]: 'manual',
+          [keys.SITE_GRANTS]: {
+            [origin]: { agentEnabled: true, classes: [], expiresAt: null, onceGrants: [] },
+          },
+        });
+      },
+      { keys: STORAGE_KEYS, apiKey, origin: fixturesOrigin },
+    );
+
+    fixturesPage = await context.newPage();
+    await fixturesPage.goto(fixturesUrl, { waitUntil: 'load' });
+
+    tabId = await sw.evaluate(
+      () => new Promise((resolve) => {
+        chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => resolve(tabs[0]?.id));
+      }),
+    );
+    expect(tabId, 'could not resolve the fixtures tab id').toBeTruthy();
+
+    panel = await context.newPage();
+    await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/sidepanel.html?testTabId=${tabId}`, {
+      waitUntil: 'load',
+    });
+  });
+
+  test.afterAll(async () => {
+    if (context) await context.close();
+    if (fixturesServer) await new Promise((resolve) => fixturesServer.close(resolve));
+    for (const dir of [userDataDir, testExtensionDir]) {
+      if (!dir) continue;
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (_e) {
+        // best-effort cleanup only
+      }
+    }
+  });
+
+  test('agent clicks a button + types a field via TRUSTED CDP input, attaches then detaches', async () => {
+    test.setTimeout(180_000);
+
+    await panel.locator('#mode-agent-btn').click();
+    const enableBtn = panel.locator('#agent-enable-btn');
+    if (await enableBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await enableBtn.click().catch(() => {});
+    }
+
+    const watcher = watchConfirmCards(panel);
+    try {
+      await panel
+        .locator('#prompt-input')
+        .fill(
+          'First click the "Click to increment" button exactly once. Then type "Ada Lovelace" into the Claimant name field. Then call finish. Do not click Submit and do not submit the form.',
+        );
+      await panel.locator('#send-btn').click();
+
+      // The acting bar shows the trusted-control badge the SW broadcast.
+      await expect(panel.locator('#acting-bar')).toBeVisible({ timeout: 30_000 });
+      await expect(panel.locator('#acting-control')).toHaveText(/controlling tab/i, { timeout: 30_000 });
+
+      // (a) chrome.debugger actually attached to the fixtures tab (SW-side
+      // latch — non-racy: it stays true even after the run detaches).
+      await expect
+        .poll(async () => sw.evaluate((id) => !!(self.__lexiCdp && self.__lexiCdp.wasEverAttached(id)), tabId), {
+          timeout: 60_000,
+          message: 'chrome.debugger never attached to the fixtures tab',
+        })
+        .toBe(true);
+
+      // (b) the button's visible state changed AND the field got the value.
+      await expect
+        .poll(async () => fixturesPage.locator('#counter-value').textContent(), {
+          timeout: 120_000,
+          message: 'the counter button was never clicked by the agent',
+        })
+        .toBe('1');
+      try {
+        await expect
+          .poll(async () => fixturesPage.locator('#claimant').inputValue(), {
+            timeout: 120_000,
+            message: '#claimant was never populated by the agent run',
+          })
+          .toBe('Ada Lovelace');
+      } catch (err) {
+        // Diagnostics: what did the agent actually do? Dump the panel's full
+        // message log + the page's recorded events before failing.
+        const log = await panel.locator('#messages').textContent().catch(() => '(unreadable)');
+        const evts = await fixturesPage.evaluate(() => window.__lexiEvents || []).catch(() => []);
+        console.log('[Scenario D diagnostics] panel #messages:\n', log);
+        console.log('[Scenario D diagnostics] recorded page events:', JSON.stringify(evts));
+        throw err;
+      }
+
+      // (c) the recorded page events prove the click + keystrokes were TRUSTED
+      // (isTrusted === true) — i.e. real CDP input, not synthetic DOM dispatch.
+      const events = await fixturesPage.evaluate(() => window.__lexiEvents || []);
+      const counterClick = events.find((e) => e.type === 'click' && e.target === 'counter-btn');
+      expect(counterClick, 'no click event was recorded on the counter button').toBeTruthy();
+      expect(counterClick.isTrusted, 'the counter click was NOT a trusted CDP event').toBe(true);
+      const claimantInput = events.find(
+        (e) => (e.type === 'input' || e.type === 'beforeinput') && e.target === 'claimant',
+      );
+      expect(claimantInput, 'no input event was recorded on the claimant field').toBeTruthy();
+      expect(claimantInput.isTrusted, 'the claimant keystrokes were NOT trusted CDP events').toBe(true);
+      // Strong guard: NONE of the agent-driven click/keystroke events may be
+      // synthetic — if the run had fallen back to CS_SYNTHETIC_ACTION we'd see
+      // isTrusted === false here, and this scenario would (correctly) fail.
+      const syntheticInputs = events.filter(
+        (e) => ['click', 'mousedown', 'input', 'beforeinput', 'keydown'].includes(e.type) && e.isTrusted === false,
+      );
+      expect(
+        syntheticInputs,
+        `found synthetic (untrusted) input events — the CDP path did not drive them: ${JSON.stringify(syntheticInputs)}`,
+      ).toEqual([]);
+
+      // The form was NOT submitted as a side effect.
+      const submitted = await fixturesPage.evaluate(() => document.body.dataset.submitted || 'false');
+      expect(submitted).toBe('false');
+    } finally {
+      await watcher.stop();
+    }
+
+    // (d) the debugger detached at run end (agent-loop's teardown → AGENT_STOP →
+    // SW detach). Proven via the SW-side attach set, NOT chrome.debugger.
+    // getTargets() — a co-resident CDP client (Playwright) keeps the target's
+    // getTargets().attached flag true regardless of our own session, so only
+    // the extension's own bookkeeping distinguishes OUR detach.
+    await expect
+      .poll(async () => sw.evaluate((id) => !!(self.__lexiCdp && self.__lexiCdp.isAttached(id)), tabId), {
+        timeout: 30_000,
+        message: 'the debugger was never detached at run end',
+      })
+      .toBe(false);
+    // And it really was attached at some point (latch remains true post-detach).
+    const everAttached = await sw.evaluate((id) => !!(self.__lexiCdp && self.__lexiCdp.wasEverAttached(id)), tabId);
+    expect(everAttached, 'the CDP session was never established during the run').toBe(true);
   });
 });
 

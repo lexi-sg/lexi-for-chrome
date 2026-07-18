@@ -17,6 +17,16 @@ const PROTOCOL_VERSION = '1.3';
 const attachedTabs = new Set();
 
 /**
+ * @type {Set<number>} tabIds we have EVER successfully attached during this SW
+ * lifetime. Never cleared on detach. This exists purely so a run/harness can
+ * prove "the CDP trusted-input path actually attached at least once" without a
+ * race against detach — chrome.debugger.getTargets().attached is unreliable for
+ * that because a co-resident CDP client (e.g. Playwright, or DevTools) also
+ * flips a target's `attached` flag, so getTargets can't tell OUR session apart.
+ */
+const everAttached = new Set();
+
+/**
  * Thrown when chrome.debugger.attach fails because some other debugger
  * (typically Chrome DevTools) already owns the tab. The agent loop should
  * surface this to the user and fall back to the synthetic-event path.
@@ -36,6 +46,16 @@ export function isCdpAvailable() {
 /** True if we currently hold a live chrome.debugger session on this tab. */
 export function isAttached(tabId) {
   return attachedTabs.has(tabId);
+}
+
+/**
+ * True if THIS extension has attached its own chrome.debugger session to the
+ * tab at any point during this service-worker lifetime (latching; never reset
+ * by detach). Read-only observability used by the acting-bar UI and the e2e
+ * harness to assert the CDP path really ran (vs. the synthetic fallback).
+ */
+export function wasEverAttached(tabId) {
+  return everAttached.has(tabId);
 }
 
 function delay(ms) {
@@ -92,6 +112,7 @@ export async function attach(tabId) {
     });
   });
   attachedTabs.add(tabId);
+  everAttached.add(tabId);
   try {
     await sendCommand(tabId, 'Page.enable');
     await sendCommand(tabId, 'DOM.enable');
@@ -164,18 +185,71 @@ const SPECIAL_KEYS = {
   end: { key: 'End', code: 'End', windowsVirtualKeyCode: 35 },
 };
 
-/** Click at viewport-relative CSS pixel coordinates via a trusted CDP event. */
-export async function clickAt(tabId, x, y, button = 'left') {
+// CDP Input.dispatch* coordinates are CSS pixels RELATIVE TO THE MAIN FRAME'S
+// VIEWPORT (per the DevTools protocol Input domain). getBoundingClientRect() —
+// which is where our bboxes come from — returns coordinates in exactly that
+// same space, so callers pass the raw rect center straight through: do NOT add
+// scrollX/scrollY (rects are already viewport-relative, scroll is baked in) and
+// do NOT multiply by devicePixelRatio (CDP wants CSS px, not device px — the
+// classic HiDPI/Retina off-by-DPR bug). Verified against the protocol docs and
+// a live trusted-input probe. The only correction a caller must make is
+// ensuring the target is actually IN the viewport before clicking (an element
+// scrolled below the fold has a bbox center beyond innerHeight and a click
+// there lands on nothing) — action-executor scrolls it into view + re-resolves
+// the fresh bbox immediately before dispatch.
+
+/** The button bitmask CDP expects while a given button is held. */
+const BUTTON_MASK = { none: 0, left: 1, right: 2, middle: 4, back: 8, forward: 16 };
+
+/**
+ * Click at viewport-relative CSS pixel coordinates via a trusted CDP event.
+ * Emits the full mouseMoved -> mousePressed -> mouseReleased sequence with a
+ * correct `buttons` bitmask (matters for pages that read MouseEvent.buttons),
+ * mirroring how Claude for Chrome drives clicks.
+ */
+export async function clickAt(tabId, x, y, button = 'left', clickCount = 1) {
+  const mask = BUTTON_MASK[button] ?? 1;
   await sendCommand(tabId, 'Input.dispatchMouseEvent', {
     type: 'mouseMoved', x, y, button: 'none', buttons: 0,
   });
-  await delay(60);
+  // A short settle after the move (Claude uses ~100ms) so hover-driven UIs
+  // (menus, tooltips, lazy focus handlers) have a tick to react before press.
+  await delay(90);
   await sendCommand(tabId, 'Input.dispatchMouseEvent', {
-    type: 'mousePressed', x, y, button, buttons: 1, clickCount: 1,
+    type: 'mousePressed', x, y, button, buttons: mask, clickCount,
   });
+  await delay(20);
   await sendCommand(tabId, 'Input.dispatchMouseEvent', {
-    type: 'mouseReleased', x, y, button, buttons: 0, clickCount: 1,
+    type: 'mouseReleased', x, y, button, buttons: 0, clickCount,
   });
+}
+
+/**
+ * Trusted wheel scroll at a viewport-relative CSS-pixel anchor point. deltaY>0
+ * scrolls the content down (viewport moves toward the page bottom), matching
+ * the DevTools protocol's mouseWheel semantics. Used by the scroll tool when a
+ * debugger session is held so pages that only react to real wheel events (many
+ * virtualized/infinite lists) still scroll.
+ */
+export async function scrollWheel(tabId, x, y, deltaX, deltaY) {
+  await sendCommand(tabId, 'Input.dispatchMouseEvent', {
+    type: 'mouseWheel', x, y, deltaX, deltaY, buttons: 0,
+  });
+}
+
+/** Viewport size in CSS pixels (for anchoring wheel scrolls / viewport checks). */
+export async function viewportSize(tabId) {
+  const res = await sendCommand(tabId, 'Runtime.evaluate', {
+    expression: 'JSON.stringify({w: window.innerWidth, h: window.innerHeight})',
+    returnByValue: true,
+  });
+  try {
+    const { w, h } = JSON.parse(res?.result?.value || '{}');
+    if (w && h) return { w, h };
+  } catch (_e) {
+    // fall through to a sane default
+  }
+  return { w: 1280, h: 800 };
 }
 
 /** Type text into whatever element currently holds focus, char by char. */

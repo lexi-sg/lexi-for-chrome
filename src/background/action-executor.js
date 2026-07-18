@@ -87,6 +87,57 @@ async function resolveRef(tabId, ref) {
   return res || { found: false };
 }
 
+/**
+ * Stale-bbox / off-viewport guard for the CDP input path. CDP Input.* uses
+ * viewport-relative CSS pixels, so an element scrolled below the fold has a
+ * bbox center beyond innerHeight and a trusted click there would land on
+ * nothing. If the freshly-resolved center is outside the viewport, scroll the
+ * element into view (scrollIntoView is not security-sensitive and needs no
+ * trusted event) and RE-RESOLVE so the caller dispatches at the element's real,
+ * current in-viewport position. Returns the (possibly refreshed) refInfo. A
+ * no-op when the element is already in view or the content script is too old to
+ * report viewport dims (backward-compatible).
+ */
+async function ensureRefInViewport(tabId, ref, refInfo) {
+  const vp = refInfo && refInfo.viewport;
+  if (!vp || !vp.h) return refInfo;
+  const inView = (info) => {
+    const { x, y, w, h } = info.bbox;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const v = info.viewport || vp;
+    return cx >= 0 && cy >= 0 && cx <= v.w && cy <= v.h;
+  };
+  if (inView(refInfo)) return refInfo;
+  // INSTANT scroll (never smooth): a smooth animation races the bbox re-read
+  // below — the click would land at a mid-animation position and miss. The
+  // dom-index marks every indexed element with data-lexi-ref, so it's
+  // addressable from an injected func without a content-script round trip.
+  await chrome.scripting
+    .executeScript({
+      target: { tabId },
+      func: (r) => {
+        const el = document.querySelector(`[data-lexi-ref="${CSS.escape(r)}"]`);
+        if (el) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+      },
+      args: [ref],
+    })
+    .catch(() => {});
+  // Re-resolve until the bbox is in-viewport and stable across two consecutive
+  // reads (guards against residual layout/scroll settling).
+  let last = refInfo;
+  for (let i = 0; i < 6; i += 1) {
+    await new Promise((r) => setTimeout(r, 120));
+    const fresh = await resolveRef(tabId, ref);
+    if (!fresh || !fresh.found) return last;
+    const stable = last.bbox && fresh.bbox.x === last.bbox.x && fresh.bbox.y === last.bbox.y;
+    const done = inView(fresh) && stable;
+    last = fresh;
+    if (done) return fresh;
+  }
+  return last;
+}
+
 /** Lazily attach the debugger for a mutating action, but only if the user has
  * explicitly enabled agent actions on this origin. Throws NoDebuggerError
  * (caught by callers as a signal to use the synthetic-event fallback) rather
@@ -216,12 +267,29 @@ async function execScreenshot(input, tabId) {
 }
 
 async function execScroll(input, tabId) {
+  const direction = input?.direction || 'down';
+  const ref = input?.ref;
+  // With a live debugger session, a plain up/down page scroll goes through a
+  // TRUSTED wheel event (Input.dispatchMouseEvent mouseWheel) so pages that
+  // only honor real wheel input (virtualized / infinite lists) still scroll.
+  // Scrolling a specific ref into view and top/bottom jumps stay on the exact
+  // synthetic path (scrollIntoView / scrollTo need no trusted event).
+  if (cdp.isAttached(tabId) && !ref && (direction === 'up' || direction === 'down')) {
+    try {
+      const vp = await cdp.viewportSize(tabId);
+      const dy = Math.round(vp.h * 0.8) * (direction === 'up' ? -1 : 1);
+      await cdp.scrollWheel(tabId, Math.round(vp.w / 2), Math.round(vp.h / 2), 0, dy);
+      return { ok: true, scrolled: direction, viaCdp: true };
+    } catch (_e) {
+      // fall through to the synthetic path below
+    }
+  }
   await ensureContentScript(tabId);
   const res = await chrome.tabs.sendMessage(tabId, {
     type: MSG.CS_SYNTHETIC_ACTION,
     action: 'scroll',
-    direction: input?.direction || 'down',
-    ref: input?.ref,
+    direction,
+    ref,
   });
   return res || { ok: true };
 }
@@ -255,13 +323,14 @@ async function execClick(input, tabId) {
   // of the confirm wait) so the re-check below spans the whole time-of-check to
   // time-of-use window, including ensureAttached's real attach round trip.
   const originBefore = input.originAtQueue || (await currentOrigin(tabId));
-  const refInfo = await resolveRef(tabId, input.ref);
+  let refInfo = await resolveRef(tabId, input.ref);
   if (!refInfo.found) {
     return { ok: false, error: `Element ${input.ref} was not found on the page (it may have scrolled away or changed).` };
   }
   if (refInfo.sensitive) {
     return { ok: false, error: 'Refusing to click a sensitive (password/payment) field. Call ask_user instead.' };
   }
+  refInfo = await ensureRefInViewport(tabId, input.ref, refInfo);
   const { x, y, w, h } = refInfo.bbox;
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -294,13 +363,14 @@ async function execClick(input, tabId) {
 
 async function execTypeText(input, tabId) {
   const originBefore = input.originAtQueue || (await currentOrigin(tabId));
-  const refInfo = await resolveRef(tabId, input.ref);
+  let refInfo = await resolveRef(tabId, input.ref);
   if (!refInfo.found) {
     return { ok: false, error: `Element ${input.ref} was not found on the page (it may have scrolled away or changed).` };
   }
   if (refInfo.sensitive) {
     return { ok: false, error: 'Refusing to type into a password or payment field. Call ask_user instead.' };
   }
+  refInfo = await ensureRefInViewport(tabId, input.ref, refInfo);
   const { x, y, w, h } = refInfo.bbox;
   const cx = x + w / 2;
   const cy = y + h / 2;

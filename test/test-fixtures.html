@@ -291,6 +291,31 @@
     // external resources. Provides the observable "visible state changes"
     // the e2e test asserts against.
     (function () {
+      // ---------------------------------------------------------------------
+      // Trusted-input recorder (used by the CDP e2e scenario). Every input-ish
+      // event anywhere on this page is pushed to window.__lexiEvents with its
+      // isTrusted flag, so the test can PROVE the agent drove the field/button
+      // via real trusted CDP input events (isTrusted === true) rather than the
+      // synthetic-DOM-event fallback (isTrusted === false). Captured at the
+      // document level, in the capture phase, so it sees events on the form
+      // fields and the counter/toggle buttons alike.
+      // ---------------------------------------------------------------------
+      window.__lexiEvents = [];
+      ['mousedown', 'mouseup', 'click', 'keydown', 'keyup', 'beforeinput', 'input'].forEach(function (type) {
+        document.addEventListener(
+          type,
+          function (ev) {
+            var t = ev.target;
+            window.__lexiEvents.push({
+              type: ev.type,
+              target: (t && t.id) || (t && t.tagName) || '',
+              isTrusted: ev.isTrusted,
+            });
+          },
+          true,
+        );
+      });
+
       var form = document.getElementById('filing-form');
       var status = document.getElementById('submit-status');
       form.addEventListener('submit', function (evt) {

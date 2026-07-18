@@ -51,6 +51,7 @@ const el = {
   confirmTemplate: document.getElementById('confirm-card-template'),
   actingBar: document.getElementById('acting-bar'),
   actingIntent: document.getElementById('acting-intent'),
+  actingControl: document.getElementById('acting-control'),
   stopBtn: document.getElementById('stop-btn'),
   agentEnableRow: document.getElementById('agent-enable-row'),
   agentEnableBtn: document.getElementById('agent-enable-btn'),
@@ -224,7 +225,11 @@ function handlePortMessage(msg) {
   }
 
   if (msg.type === MSG.AGENT_ACTING) {
-    setActingBar(true, msg.intent || 'Lexi is acting');
+    // The SW sends this at run start with {cdp, control} to report whether it
+    // attached the debugger (trusted CDP input) or is on the synthetic-event
+    // fallback, and may also carry an intent string.
+    if (msg.control) setActingControl(msg.control);
+    setActingBar(true, msg.intent || el.actingIntent.textContent || 'Lexi is acting');
     return;
   }
 
@@ -926,6 +931,7 @@ async function handleAgentSend(task) {
 
   renderer.appendUser(task);
   agentAssistantHandle = null;
+  setActingControl(null); // reset; the SW reports trusted/fallback on AGENT_ACTING
   setActingBar(true, 'Lexi is starting…');
 
   agentRun = createAgentRun({
@@ -1022,6 +1028,7 @@ function finishAgentRun(status, event) {
 
   el.actingBar.classList.add('lexi-acting-done');
   el.actingIntent.textContent = status === 'error' ? 'Lexi hit an error' : 'Done';
+  setActingControl(null);
   setTimeout(() => {
     el.actingBar.hidden = true;
     el.actingBar.classList.remove('lexi-acting-done');
@@ -1037,6 +1044,38 @@ function finishAgentRun(status, event) {
 function setActingBar(visible, intentText) {
   el.actingBar.hidden = !visible;
   if (intentText) el.actingIntent.textContent = intentText;
+  // The control badge lives inside the bar; re-render it whenever the bar shows
+  // so the trusted/fallback state persists across the run's thinking↔acting
+  // toggles (it is only reset to null when the whole run ends).
+  if (visible) renderControlBadge();
+}
+
+// The SW-reported control mode for the CURRENT run: 'trusted' (chrome.debugger
+// attached — real trusted input, like Claude for Chrome) or 'fallback'
+// (synthetic DOM events). Persists for the whole run; cleared at run end.
+let agentControlMode = null;
+
+function setActingControl(control) {
+  agentControlMode = control || null;
+  renderControlBadge();
+}
+
+function renderControlBadge() {
+  const badge = el.actingControl;
+  if (!badge) return;
+  if (!agentControlMode) {
+    badge.hidden = true;
+    badge.textContent = '';
+    badge.classList.remove('lexi-control-fallback');
+    return;
+  }
+  const trusted = agentControlMode === 'trusted';
+  badge.hidden = false;
+  badge.textContent = trusted ? 'Controlling tab' : 'Compatibility mode';
+  badge.title = trusted
+    ? 'Driving this tab with trusted native input events via chrome.debugger.'
+    : 'Debugger not attached — using synthetic DOM events (compatibility fallback).';
+  badge.classList.toggle('lexi-control-fallback', !trusted);
 }
 
 el.stopBtn.addEventListener('click', () => {

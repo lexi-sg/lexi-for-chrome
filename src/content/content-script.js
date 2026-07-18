@@ -107,6 +107,13 @@
         found: true,
         bbox: info.bbox,
         sensitive: !!info.sensitive,
+        // Viewport size (CSS px) so the SW's CDP path can tell whether the
+        // element's bbox center is on-screen before dispatching a trusted
+        // click at viewport-relative coords. Additive/optional field.
+        viewport: {
+          w: window.innerWidth || document.documentElement.clientWidth || 0,
+          h: window.innerHeight || document.documentElement.clientHeight || 0,
+        },
       });
     } catch (err) {
       sendResponse({ type: MSG.CS_REF_INFO, found: false, error: errMessage(err) });

@@ -515,7 +515,11 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
     run.consecutiveFailures += 1;
     emit({ type: 'status', status: 'error', error: serializeError(err), recoverable: true });
     if (run.consecutiveFailures >= LIMITS.MAX_FAILURES) run.stopped = true;
-    return { finished: run.stopped, answer: '' };
+    if (run.stopped) return { finished: true, answer: '' };
+    // Recoverable and not out of budget: RETRY the think step. Returning
+    // finished:false here without toolUses would crash actStep (it calls
+    // toolUses.find) — the outer loop's `retry` branch is the correct path.
+    return { retry: true };
   }
 
   // -- ACT -----------------------------------------------------------------
@@ -546,7 +550,12 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, apiKey,
     maybeTrimOldScreenshots();
 
     const observation = await observeForNextStep();
-    run.messages.push({ role: 'user', content: [...results, ...observation] });
+    // `_benign` is loop-internal failure-budget bookkeeping — it must NOT go on
+    // the wire. The Anthropic API strictly validates tool_result blocks and
+    // rejects unknown fields ("Extra inputs are not permitted"), which would
+    // kill every run that needs a second model call after a tool_result.
+    const wireResults = results.map(({ _benign, ...rest }) => rest);
+    run.messages.push({ role: 'user', content: [...wireResults, ...observation] });
 
     const anyUnexpectedFailure = results.some((r) => r.is_error && !r._benign);
     const anySuccess = results.some((r) => !r.is_error);
