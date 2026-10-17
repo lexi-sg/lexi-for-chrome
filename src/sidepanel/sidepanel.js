@@ -474,6 +474,22 @@ function onAuthLost(expired) {
   }
 }
 
+/**
+ * A 401 from chat or Agent Mode does not by itself mean the session ended: a
+ * route can refuse one request while the token is fine. The session endpoint
+ * decides. When it says the token is dead the SW clears it and broadcasts
+ * AUTH_CHANGED{expired}, which shows the re-auth banner (never a silent BYOK
+ * fallback); otherwise the user stays signed in and is told what failed.
+ */
+async function handleRefusedRequest(what) {
+  const session = await requestSession().catch(() => null);
+  if (session && session.expired) {
+    onAuthLost(true);
+    return;
+  }
+  renderer.appendSystemNote(`${what} You’re still signed in — try again in a moment.`);
+}
+
 function showSessionExpiredBanner() {
   sessionExpired = true;
   if (el.keyBannerText) el.keyBannerText.textContent = 'Your Lexi session ended — sign in again.';
@@ -1277,7 +1293,7 @@ async function runProductChat(userMessage, opts = {}) {
   } catch (err) {
     handle.finalize();
     if (err && err.name === 'AuthError') {
-      onAuthLost(true);
+      handleRefusedRequest('Lexi’s chat service turned this message down.');
     } else if (err && err.name === 'AbortError') {
       renderer.appendSystemNote('Stopped.');
     } else {
@@ -1413,11 +1429,10 @@ function finishAgentRun(status, event) {
   if (status === 'error') {
     // agent-loop.js emits errors as {status:'error', error:{type, message}}.
     const errMsg = (event && event.error && event.error.message) || (event && event.message);
-    if (errMsg) renderer.appendSystemNote(describeAgentError(event.error) || errMsg);
-    // A session-expiry (account 401) must surface the re-auth banner and never
-    // silently fall back to a stored key.
     if (event && event.error && event.error.type === 'SessionExpiredError') {
-      onAuthLost(true);
+      handleRefusedRequest('Lexi’s agent service turned this task down.');
+    } else if (errMsg) {
+      renderer.appendSystemNote(describeAgentError(event.error) || errMsg);
     }
   }
 
