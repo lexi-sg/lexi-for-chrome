@@ -53,6 +53,9 @@ const FOLLOW_UPS = ['What does the indemnification clause require?', 'Can the te
 // ---------------------------------------------------------------------------
 function startMockBackend() {
   const calls = [];
+  // Flipped by a TRIGGER_DEAD chat message: the token is revoked, so the
+  // session endpoint answers 401 too.
+  let sessionDead = false;
 
   function writeSse(res, event, data) {
     res.write(`event: ${event}\n`);
@@ -61,6 +64,11 @@ function startMockBackend() {
 
   function handleSession(req, res) {
     calls.push({ url: req.url, method: req.method, headers: req.headers, body: '' });
+    if (sessionDead) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'Invalid or expired token' }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ account: MOCK_ACCOUNT, usage: MOCK_USAGE, models: ['claude-sonnet-5'] }));
   }
@@ -75,7 +83,8 @@ function startMockBackend() {
     }
     const userMessage = parsed.user_message || '';
 
-    if (/TRIGGER_401/.test(userMessage)) {
+    if (/TRIGGER_DEAD/.test(userMessage)) sessionDead = true;
+    if (/TRIGGER_401|TRIGGER_DEAD/.test(userMessage)) {
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ detail: 'Invalid or expired token' }));
       return;
@@ -339,8 +348,20 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
     expect(FOLLOW_UPS.some((q) => chipTexts.includes(q))).toBe(true);
   });
 
-  test('a 401 from the mock flips the session-expiry banner and disables the composer', async () => {
+  test('a chat 401 while the session is still valid keeps the user signed in', async () => {
     await panel.locator('#prompt-input').fill('TRIGGER_401 please.');
+    await panel.locator('#composer').locator('#send-btn').click();
+
+    await expect(panel.locator('#messages')).toContainText('You’re still signed in', { timeout: 15_000 });
+    await expect(panel.locator('#key-banner')).toBeHidden();
+    await expect(panel.locator('#account-chip')).toBeVisible();
+    await expect(panel.locator('#send-btn')).toBeEnabled();
+    const stored = await panel.evaluate(() => chrome.storage.local.get('lexi_extension_token'));
+    expect(stored.lexi_extension_token).toBe(FAKE_TOKEN);
+  });
+
+  test('a 401 with a revoked token flips the session-expiry banner and disables the composer', async () => {
+    await panel.locator('#prompt-input').fill('TRIGGER_DEAD please.');
     await panel.locator('#composer').locator('#send-btn').click();
 
     const banner = panel.locator('#key-banner');
