@@ -423,6 +423,20 @@ body {
   padding-left: 20px;
 }
 
+/* A quoted passage, as the web app's prose shows it: a light rule on the left,
+   indented, italic. */
+.lexi-msg-assistant blockquote {
+  margin: 0 0 8px;
+  padding-left: 12px;
+  border-left: 3px solid var(--lexi-field-border);
+  color: var(--lexi-text);
+  font-style: italic;
+}
+
+.lexi-msg-assistant blockquote:last-child {
+  margin-bottom: 0;
+}
+
 .lexi-msg-assistant code {
   font-family: var(--lexi-mono);
   font-size: 12.5px;

@@ -44,6 +44,26 @@ const ANSWER_TEXT =
   'This lease has a risky auto-renewal clause and a broad indemnification clause worth flagging.';
 const FOLLOW_UPS = ['What does the indemnification clause require?', 'Can the tenant terminate early?'];
 
+// Markdown an answer may carry: a bold citation around an italic case name,
+// italics holding bold, _underscore_ italics next to a snake_case word, HTML
+// that must stay text, and a quoted passage with a nested quote and a list.
+const MARKDOWN_ANSWER = [
+  'Authorities cited:',
+  '',
+  '- ***Nilabati Behera v. State of Orissa*, (1993) 2 SCC 746:** compensation as a public-law remedy.',
+  '- **_Vishaka_ guidelines** bind *every **employer** until* legislation, per _Article 141_; see file_name_here.',
+  '- **<b>not html</b>** stays text.',
+  '',
+  'Its first sentence is:',
+  '',
+  '> “All employers should take appropriate steps',
+  '> to prevent sexual harassment.”',
+  '> > Nested',
+  '> 1. one',
+  '',
+  'After the quote.',
+].join('\n');
+
 // ---------------------------------------------------------------------------
 // Mock product backend — a real local http.Server (not a Playwright route
 // stub) implementing exactly the two endpoints account-mode chat needs:
@@ -102,7 +122,7 @@ function startMockBackend() {
     writeSse(res, 'block_delta', {
       seq: 2,
       block_index: 0,
-      delta: { kind: 'text', text: ANSWER_TEXT },
+      delta: { kind: 'text', text: /MARKDOWN_SAMPLE/.test(userMessage) ? MARKDOWN_ANSWER : ANSWER_TEXT },
     });
     writeSse(res, 'block_stop', { seq: 3, block_index: 0, final: { status: 'done' } });
     writeSse(res, 'follow_up_questions', { follow_up_questions: FOLLOW_UPS });
@@ -371,6 +391,34 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
     await expect(panel.locator('#send-btn')).toBeEnabled();
     await expect(answer).toContainText('The lease runs for');
     await expect.poll(() => mockSlow.closed, { message: 'the stopped answer kept its connection open' }).toBe(true);
+  });
+
+  test('answers render nested bold/italic and quoted passages, never raw markers', async () => {
+    await panel.locator('#prompt-input').fill('MARKDOWN_SAMPLE please.');
+    await panel.locator('#send-btn').click();
+
+    const body = panel.locator('.lexi-msg-assistant .lexi-msg-body').last();
+    await expect(body).toContainText('After the quote.', { timeout: 15_000 });
+    expect(await body.innerHTML()).toBe(
+      [
+        '<p>Authorities cited:</p>',
+        '<ul>',
+        '<li><strong><em>Nilabati Behera v. State of Orissa</em>, (1993) 2 SCC 746:</strong> compensation as a public-law remedy.</li>',
+        '<li><strong><em>Vishaka</em> guidelines</strong> bind <em>every <strong>employer</strong> until</em> legislation, per <em>Article 141</em>; see file_name_here.</li>',
+        '<li><strong>&lt;b&gt;not html&lt;/b&gt;</strong> stays text.</li>',
+        '</ul>',
+        '<p>Its first sentence is:</p>',
+        '<blockquote>',
+        '<p>“All employers should take appropriate steps to prevent sexual harassment.”</p>',
+        '<blockquote><p>Nested</p></blockquote>',
+        '<ol><li>one</li></ol>',
+        '</blockquote>',
+        '<p>After the quote.</p>',
+      ].join(''),
+    );
+    const text = await body.innerText();
+    expect(text).not.toContain('*');
+    expect(text).not.toMatch(/^>/m);
   });
 
   test('a 401 from the mock flips the session-expiry banner and disables the composer', async () => {
