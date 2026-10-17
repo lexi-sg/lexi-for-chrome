@@ -94,9 +94,12 @@ function backoffDelay(attempt) {
 /**
  * Normalize the caller's auth descriptor. Two shapes are accepted so both
  * transports share one client:
- *   {mode:'account', token, baseUrl} -> the landed Anthropic-shaped proxy
+ *   {mode:'account', token, baseUrl} -> Lexi's Agent Mode endpoint
  *       (POST {baseUrl}/api/extension/messages) with a Bearer token. The
- *       server injects the real Anthropic key; we send NO x-api-key.
+ *       backend runs the call on its shared LLM service (the Anthropic /
+ *       OpenAI / Gemini fallback chain standard chat uses) and answers in
+ *       Anthropic's Messages SSE shape, whichever provider served it. We
+ *       send NO x-api-key.
  *   {mode:'byok', apiKey}            -> direct api.anthropic.com (escape hatch)
  * A bare `apiKey` (legacy call shape) is treated as BYOK for backwards
  * compatibility, so existing BYOK callers/tests keep working unchanged.
