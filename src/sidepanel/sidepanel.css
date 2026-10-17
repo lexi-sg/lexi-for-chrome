@@ -953,6 +953,55 @@ body {
   transform: none;
 }
 
+/* Stop pill that replaces Send while a chat answer streams (web app
+   SendStopButton: h-7 rounded-full brand-action, "Stop" + a filled square). */
+#chat-stop-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--lexi-accent);
+  color: var(--lexi-on-accent);
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms ease;
+}
+
+#chat-stop-btn[hidden],
+#send-btn[hidden] {
+  display: none;
+}
+
+#chat-stop-btn:hover {
+  background: var(--lexi-accent-strong);
+}
+
+#chat-stop-btn:active {
+  transform: scale(0.97);
+}
+
+.lexi-stop-square {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.lexi-stop-square::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 1.5px;
+  background: currentColor;
+}
+
 #slash-menu {
   position: absolute;
   bottom: 100%;

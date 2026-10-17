@@ -73,6 +73,7 @@ const el = {
   actingIntent: document.getElementById('acting-intent'),
   actingControl: document.getElementById('acting-control'),
   stopBtn: document.getElementById('stop-btn'),
+  chatStopBtn: document.getElementById('chat-stop-btn'),
   agentEnableRow: document.getElementById('agent-enable-row'),
   agentEnableBtn: document.getElementById('agent-enable-btn'),
   quickActions: document.getElementById('quick-actions'),
@@ -1001,6 +1002,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
   if (chatRunActive) return;
   chatRunActive = true;
   el.sendBtn.disabled = true;
+  showChatStop(true);
 
   chatConversation.push({ role: 'user', content: userContentBlocks });
 
@@ -1068,6 +1070,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
   } finally {
     chatRunActive = false;
     el.sendBtn.disabled = false;
+    showChatStop(false);
   }
 }
 
@@ -1194,6 +1197,7 @@ async function runProductChat(userMessage, opts = {}) {
   if (chatRunActive) return;
   chatRunActive = true;
   el.sendBtn.disabled = true;
+  showChatStop(true);
 
   const handle = renderer.startAssistant();
   if (opts.previewImage) handle.appendImage(opts.previewImage);
@@ -1276,6 +1280,9 @@ async function runProductChat(userMessage, opts = {}) {
       onEvent,
     });
     handle.finalize();
+    // A Stop that lands between reads ends the stream quietly rather than
+    // with an AbortError; say so either way.
+    if (chatAbortController.signal.aborted) renderer.appendSystemNote('Stopped.');
   } catch (err) {
     handle.finalize();
     if (err && err.name === 'AuthError') {
@@ -1289,6 +1296,7 @@ async function runProductChat(userMessage, opts = {}) {
     chatRunActive = false;
     chatAbortController = null;
     el.sendBtn.disabled = sessionExpired;
+    showChatStop(false);
   }
 }
 
@@ -1499,6 +1507,14 @@ function renderControlBadge() {
     : 'Debugger not attached — using synthetic DOM events (compatibility fallback).';
   badge.classList.toggle('lexi-control-fallback', !trusted);
 }
+
+/** While a chat answer streams, the composer's Send button becomes Stop. */
+function showChatStop(running) {
+  el.sendBtn.hidden = running;
+  el.chatStopBtn.hidden = !running;
+}
+
+el.chatStopBtn.addEventListener('click', () => chatAbortController?.abort());
 
 el.stopBtn.addEventListener('click', () => {
   // The bar's Stop ends the agent run. A chat answer streaming alongside it

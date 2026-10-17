@@ -53,6 +53,8 @@ const FOLLOW_UPS = ['What does the indemnification clause require?', 'Can the te
 // ---------------------------------------------------------------------------
 function startMockBackend() {
   const calls = [];
+  // A SLOW_STREAM answer starts and then hangs until the client goes away.
+  const slow = { closed: false };
 
   function writeSse(res, event, data) {
     res.write(`event: ${event}\n`);
@@ -88,6 +90,15 @@ function startMockBackend() {
     });
     writeSse(res, 'stream_start', { conversation_id: 4242, public_uuid: 'mock-conv-uuid' });
     writeSse(res, 'block_start', { seq: 1, block_index: 0, block: { type: 'text', purpose: 'answer' } });
+
+    if (/SLOW_STREAM/.test(userMessage)) {
+      writeSse(res, 'block_delta', { seq: 2, block_index: 0, delta: { kind: 'text', text: 'The lease runs for' } });
+      res.on('close', () => {
+        slow.closed = true;
+      });
+      return; // never finishes on its own
+    }
+
     writeSse(res, 'block_delta', {
       seq: 2,
       block_index: 0,
@@ -114,7 +125,7 @@ function startMockBackend() {
     res.end('not found');
   });
 
-  return { server, calls };
+  return { server, calls, slow };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +198,7 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
   /** @type {http.Server} */
   let mockServer;
   let mockCalls;
+  let mockSlow;
   let fixturesUrl;
   let mockOrigin;
   let extensionId;
@@ -212,6 +224,7 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
     const mock = startMockBackend();
     mockServer = mock.server;
     mockCalls = mock.calls;
+    mockSlow = mock.slow;
     await new Promise((resolve) => mockServer.listen(0, '127.0.0.1', resolve));
     mockOrigin = `http://127.0.0.1:${mockServer.address().port}`;
 
@@ -337,6 +350,27 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
       .toBeGreaterThan(0);
     const chipTexts = (await chips.allTextContents()).join(' | ');
     expect(FOLLOW_UPS.some((q) => chipTexts.includes(q))).toBe(true);
+  });
+
+  test('while an answer streams, Send becomes Stop; Stop ends it and brings Send back', async () => {
+    await panel.locator('#prompt-input').fill('SLOW_STREAM: how long is the lease?');
+    await panel.locator('#send-btn').click();
+
+    const answer = panel.locator('.lexi-msg-assistant').last();
+    await expect(answer).toContainText('The lease runs for', { timeout: 15_000 });
+    await expect(panel.locator('#chat-stop-btn')).toBeVisible();
+    await expect(panel.locator('#chat-stop-btn')).toHaveText('Stop');
+    await expect(panel.locator('#send-btn')).toBeHidden();
+    // Chat has no acting bar: its Stop lives in the composer.
+    await expect(panel.locator('#acting-bar')).toBeHidden();
+
+    await panel.locator('#chat-stop-btn').click();
+    await expect(panel.locator('#messages .lexi-injection-flag').last()).toHaveText('Stopped.', { timeout: 10_000 });
+    await expect(panel.locator('#chat-stop-btn')).toBeHidden();
+    await expect(panel.locator('#send-btn')).toBeVisible();
+    await expect(panel.locator('#send-btn')).toBeEnabled();
+    await expect(answer).toContainText('The lease runs for');
+    await expect.poll(() => mockSlow.closed, { message: 'the stopped answer kept its connection open' }).toBe(true);
   });
 
   test('a 401 from the mock flips the session-expiry banner and disables the composer', async () => {
