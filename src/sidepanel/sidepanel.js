@@ -1323,6 +1323,9 @@ async function handleAgentSend(task) {
 
   renderer.appendUser(task);
   agentActivity = createAgentActivity(el.messages);
+  clearTimeout(actingBarHideTimer);
+  actingBarHideTimer = null;
+  el.actingBar.classList.remove('lexi-acting-done');
   setActingControl(null); // reset; the SW reports trusted/fallback on AGENT_ACTING
   setActingBar(true, 'Lexi is starting…');
 
@@ -1415,7 +1418,9 @@ function intentTextFor(event) {
 function applyAgentStatus(event) {
   const status = event.status || event.state;
   if (status === 'thinking') {
-    setActingBar(false);
+    // The run is still live while the model works out its next step, so the
+    // bar (and its Stop) stays up.
+    setActingBar(true, 'Thinking…');
   } else if (status === 'acting' || status === 'awaiting_confirm') {
     setActingBar(true, event.intent || 'Lexi is acting');
   } else if (status === 'done' || status === 'stopped' || status === 'error') {
@@ -1442,7 +1447,8 @@ function finishAgentRun(status, event) {
   el.actingBar.classList.add('lexi-acting-done');
   el.actingIntent.textContent = status === 'error' ? 'Lexi hit an error' : 'Done';
   setActingControl(null);
-  setTimeout(() => {
+  actingBarHideTimer = setTimeout(() => {
+    actingBarHideTimer = null;
     el.actingBar.hidden = true;
     el.actingBar.classList.remove('lexi-acting-done');
   }, 1500);
@@ -1453,6 +1459,9 @@ function finishAgentRun(status, event) {
     el.promptInput.placeholder = 'Describe the task Lexi should do on this page…';
   }
 }
+
+// Pending hide of the last run's "Done" bar; a new run cancels it.
+let actingBarHideTimer = null;
 
 function setActingBar(visible, intentText) {
   el.actingBar.hidden = !visible;
@@ -1492,8 +1501,10 @@ function renderControlBadge() {
 }
 
 el.stopBtn.addEventListener('click', () => {
-  agentRun?.stop();
-  chatAbortController?.abort();
+  // The bar's Stop ends the agent run. A chat answer streaming alongside it
+  // has its own Stop in the composer, so it is left alone.
+  if (agentRun) agentRun.stop();
+  else chatAbortController?.abort();
   setActingBar(false);
 });
 

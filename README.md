@@ -207,8 +207,9 @@ attach (e.g. DevTools is already open on that tab), Lexi degrades to a
 synthetic-DOM-event compatibility fallback and says so in the acting bar.
 While active:
 
-- A persistent red "Lexi is acting — `<intent>`" bar with a **Stop** button
-  sits above the composer, with a control-mode badge ("Controlling tab" =
+- A red "Lexi is acting — `<intent>`" bar with a **Stop** button sits above
+  the composer for the whole run, including while the model works out its
+  next step ("Thinking…"), with a control-mode badge ("Controlling tab" =
   trusted CDP input; "Compatibility mode" = synthetic fallback);
   `overlay.js` paints a pulsing red border on the page itself, and Chrome's
   own unsuppressable "started debugging this browser" infobar is present —

@@ -36,7 +36,7 @@ const ANSWER = 'Found it: **Vishaka v. State of Rajasthan**.';
 // One model reply per call, in order. `ref` names an element in the page's
 // interactive index, resolved from the request so the mock needs no fixed refs.
 const SCRIPT = [
-  { delayMs: 1200, text: 'Let me read the page first.', tool: { name: 'read_page', input: {} } },
+  { delayMs: 2500, text: 'Let me read the page first.', tool: { name: 'read_page', input: {} } },
   {
     thinking: "**Planning**\n\nThe page has a *Query* box; I'll type the case name.",
     tool: { name: 'type_text', input: { ref: 'Query', text: 'Vishaka' } },
@@ -293,6 +293,9 @@ test.describe('agent activity timeline', () => {
     // "Thinking…" with a pulsing "Thinking…" row.
     await expect(msg.locator('.lexi-thinking-wait')).toHaveText('Thinking…', { timeout: 15_000 });
     await expect(msg.locator('.lexi-seg-title').first()).toHaveText('Thinking…');
+    // The run can be stopped while the model thinks, not only mid-action.
+    await expect(panel.locator('#acting-intent')).toHaveText('Thinking…');
+    await expect(panel.locator('#stop-btn')).toBeVisible();
 
     // The delete asks for approval: its row waits, labelled while running.
     const card = panel.locator('.lexi-confirm-card');
