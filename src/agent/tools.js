@@ -67,12 +67,12 @@ export const TOOLS = [
   {
     name: 'type_text',
     description:
-      'Type text into the element with the given ref. Never use this for passwords or payment fields — call ask_user instead; it will be blocked automatically.',
+      'Type text into the element with the given ref, replacing whatever it held. Never use this for passwords or payment fields — call ask_user instead; it will be blocked automatically.',
     input_schema: {
       type: 'object',
       properties: {
         ref: { type: 'string', description: "The element ref from read_page's interactive index, e.g. 'e27'." },
-        text: { type: 'string', description: 'The text to type into the field.' },
+        text: { type: 'string', description: "The field's new text; an empty string clears it." },
         submit: {
           type: 'boolean',
           description: 'If true, press Enter after typing (treated as a form submission and will require confirmation).',

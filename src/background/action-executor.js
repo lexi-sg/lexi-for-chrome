@@ -476,7 +476,15 @@ async function execTypeText(input, tabId) {
       return { ok: false, error: 'tab navigated mid-action, aborted' };
     }
     await cdp.clickAt(tabId, cx, cy);
-    await cdp.typeText(tabId, input.text ?? '');
+    // The text replaces what the field held, as in the fallback path: select
+    // its contents so the inserted text overwrites them (the click alone
+    // leaves the caret wherever it landed).
+    const text = input.text ?? '';
+    await chrome.tabs
+      .sendMessage(tabId, { type: MSG.CS_SYNTHETIC_ACTION, action: 'selectContents', ref: input.ref })
+      .catch(() => {});
+    if (text) await cdp.typeText(tabId, text);
+    else await cdp.pressKeys(tabId, 'Backspace');
     if (input.submit) {
       await cdp.pressKeys(tabId, 'Enter');
     }

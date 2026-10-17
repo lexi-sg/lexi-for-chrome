@@ -852,3 +852,93 @@ test.describe('agent tools — real extension, loopback fixtures, mock model', (
     expect(toolResult.content).toContain(`"page":"${TARGET_PAGE}"`);
   });
 });
+
+// Trusted input (chrome.debugger granted and Agent Mode enabled on the site):
+// type_text clicks the field for real and inserts text, so it must select what
+// the field held first or the text lands wherever the click put the caret.
+test.describe('agent tools — trusted typing', () => {
+  let context;
+  let page;
+  let panel;
+  let tabId;
+  let fixtureServer;
+  let fixtureOrigin;
+  let userDataDir;
+  let extDir;
+
+  test.beforeAll(async () => {
+    fixtureServer = startFixtureServer();
+    fixtureOrigin = `http://127.0.0.1:${await listen(fixtureServer)}`;
+    extDir = buildTestExtensionCopy('http://127.0.0.1:9');
+    const manifestPath = path.join(extDir, 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.permissions = [...new Set([...(manifest.permissions || []), 'debugger'])];
+    manifest.optional_permissions = (manifest.optional_permissions || []).filter((p) => p !== 'debugger');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexi-trusted-typing-'));
+    context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      channel: 'chromium',
+      args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`, '--no-first-run'],
+    });
+    let [sw] = context.serviceWorkers();
+    if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 15000 });
+    await sw.evaluate(
+      (origin) =>
+        chrome.storage.local.set({
+          lexi_site_grants: { [origin]: { agentEnabled: true, classes: [], expiresAt: null, onceGrants: [] } },
+        }),
+      fixtureOrigin,
+    );
+    page = await context.newPage();
+    await page.goto(`${fixtureOrigin}/form`, { waitUntil: 'load' });
+    tabId = await sw.evaluate(
+      () => new Promise((resolve) => chrome.tabs.query({ active: true, lastFocusedWindow: true }, (t) => resolve(t[0]?.id))),
+    );
+    panel = await context.newPage();
+    await panel.goto(`chrome-extension://${new URL(sw.url()).host}/src/sidepanel/sidepanel.html?testTabId=${tabId}`);
+    await panel.evaluate(() => {
+      const port = chrome.runtime.connect({ name: 'lexi-sidepanel' });
+      const waiting = new Map();
+      port.onMessage.addListener((msg) => {
+        const done = msg && waiting.get(msg.requestId);
+        if (done) {
+          waiting.delete(msg.requestId);
+          done(msg);
+        }
+      });
+      window.__sw = (message) =>
+        new Promise((resolve) => {
+          const requestId = crypto.randomUUID();
+          waiting.set(requestId, resolve);
+          port.postMessage({ ...message, requestId });
+        });
+    });
+  });
+
+  test.afterAll(async () => {
+    if (context) await context.close();
+    if (fixtureServer) await new Promise((resolve) => fixtureServer.close(resolve));
+    for (const dir of [userDataDir, extDir]) {
+      if (dir) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('type_text replaces what the field held; an empty string clears it', async () => {
+    const sw$ = (message) => panel.evaluate((m) => window.__sw(m), message);
+    const exec = (name, input) => sw$({ type: 'EXEC_TOOL', tabId, toolUseId: `t_${Date.now()}`, name, input });
+    await page.fill('#q', 'Maneka Gandhi v Union of India');
+    const elements = (await sw$({ type: 'EXTRACT_PAGE', tabId, mode: 'interactive' })).elements;
+    const search = elements.find((e) => e.name === 'Search records');
+
+    const typed = await exec('type_text', { ref: search.ref, text: 'Vishaka' });
+    expect(typed.ok, JSON.stringify(typed)).toBe(true);
+    expect(typed.result.fallback).toBeUndefined(); // the trusted path ran
+    expect(await page.inputValue('#q')).toBe('Vishaka');
+
+    const cleared = await exec('type_text', { ref: search.ref, text: '' });
+    expect(cleared.ok, JSON.stringify(cleared)).toBe(true);
+    expect(await page.inputValue('#q')).toBe('');
+  });
+});

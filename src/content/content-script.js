@@ -340,6 +340,27 @@
     }
   }
 
+  /** Focus the ref's field and select everything in it, so text typed next
+   * (trusted input) replaces what the field held, as syntheticType does. */
+  function selectContents(ref) {
+    var info = lexi().domIndex.resolveRef(ref);
+    if (!info || !info.found || !info.element) {
+      return { ok: false, error: 'element not found for ref ' + ref };
+    }
+    var el = info.element;
+    if (document.activeElement !== el) el.focus();
+    if ('value' in el && typeof el.select === 'function') {
+      el.select();
+    } else if (el.isContentEditable) {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    return { ok: true };
+  }
+
   function syntheticKeys(ref, keys) {
     var combo = parseKeyCombo(keys);
     if (!combo.key) return { ok: false, error: 'no key specified' };
@@ -469,6 +490,8 @@
         result = syntheticClick(message.ref);
       } else if (action === 'type') {
         result = syntheticType(message.ref, message.text || '');
+      } else if (action === 'selectContents') {
+        result = selectContents(message.ref);
       } else if (action === 'keys') {
         result = syntheticKeys(message.ref, message.keys || '');
       } else if (action === 'scroll') {
