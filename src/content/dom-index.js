@@ -6,9 +6,12 @@
 //
 // CLASSIC SCRIPT — no `import`/`export`. Publishes on window.__lexi.
 //
-// window.__lexi.domIndex.buildIndex()      -> {elements, tree}
+// window.__lexi.domIndex.buildIndex()      -> {elements, tree, signals}
 // window.__lexi.domIndex.resolveRef(ref)   -> {found, element, bbox, sensitive}
 // window.__lexi.domIndex.diffNew(prevRefs) -> string[] refs new since prevRefs
+// window.__lexi.domIndex.refFor(el)        -> ref for any element (scroll target)
+// window.__lexi.domIndex.fieldInfo(ref?)   -> {found, isSearch, isLink, nothingFocused}
+// window.__lexi.domIndex.detectSignals()   -> {loginWall, captcha} ({reason, blocking} | null each)
 
 (function () {
   if (window.__lexi && window.__lexi.domIndex) {
@@ -93,6 +96,16 @@
     return ref;
   }
 
+  // A native select, checkbox or radio made transparent and laid over a
+  // styled stand-in (wikipedia.org's language picker) is still the control
+  // the user operates, so it stays in the index.
+  function isTransparentControl(el) {
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'select') return true;
+    var type = (el.getAttribute('type') || '').toLowerCase();
+    return tag === 'input' && (type === 'checkbox' || type === 'radio');
+  }
+
   function isVisible(el) {
     if (!el.isConnected) return false;
     var rects = el.getClientRects();
@@ -101,7 +114,7 @@
     var style = window.getComputedStyle(el);
     if (!style) return false;
     if (style.visibility === 'hidden' || style.display === 'none') return false;
-    if (parseFloat(style.opacity) === 0) return false;
+    if (parseFloat(style.opacity) === 0 && !isTransparentControl(el)) return false;
 
     var rect = rects[0];
     if (rect.width <= 0 || rect.height <= 0) return false;
@@ -141,13 +154,154 @@
     return tag;
   }
 
+  // Words in a field's name/id/placeholder/label that mark it as a one-time
+  // code or CAPTCHA answer — the user types those, never the agent.
+  var CODE_FIELD_TOKENS = ['otp', 'totp', '2fa', 'mfa', 'passcode', 'captcha'];
+  var CODE_FIELD_PAIRS = [['one', 'time'], ['verification', 'code'], ['security', 'code'], ['auth', 'code']];
+
+  function hintTokens(el) {
+    var raw = [
+      el.getAttribute('name'),
+      el.id,
+      el.getAttribute('placeholder'),
+      el.getAttribute('aria-label'),
+      el.getAttribute('title'),
+      accessibleName(el),
+    ].join(' ');
+    return raw
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+  }
+
+  function isCodeField(el) {
+    var tokens = hintTokens(el);
+    if (tokens.some(function (t) { return CODE_FIELD_TOKENS.indexOf(t) !== -1 || t.indexOf('captcha') !== -1; })) {
+      return true;
+    }
+    return CODE_FIELD_PAIRS.some(function (pair) {
+      var i = tokens.indexOf(pair[0]);
+      return i !== -1 && tokens[i + 1] === pair[1];
+    });
+  }
+
   function isSensitive(el) {
     if (el.tagName.toLowerCase() !== 'input') return false;
     var type = (el.getAttribute('type') || '').toLowerCase();
     if (type === 'password') return true;
     var autocomplete = (el.getAttribute('autocomplete') || '').toLowerCase();
     if (/(^|\s)cc-/.test(autocomplete)) return true;
+    if (/(^|\s)one-time-code(\s|$)/.test(autocomplete)) return true;
+    if (['', 'text', 'tel', 'number'].indexOf(type) !== -1 && isCodeField(el)) return true;
     return false;
+  }
+
+  // A text box whose Enter runs a search (not a form that files, sends or
+  // buys something). The SW lets typing a query and running the search go
+  // without a confirm; Enter anywhere else stays a SUBMIT.
+  var SEARCH_HINT_TOKENS = ['search', 'query', 'keyword', 'keywords', 'find', 'lookup', 'q', 'searchtext', 'searchbox'];
+
+  function isSearchField(el) {
+    if (!el || !el.tagName) return false;
+    var tag = el.tagName.toLowerCase();
+    var role = (el.getAttribute('role') || '').toLowerCase();
+    if (tag !== 'input' && tag !== 'textarea' && role !== 'searchbox' && role !== 'combobox') return false;
+    if (isSensitive(el)) return false;
+    var type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (tag === 'input' && ['text', 'search'].indexOf(type) === -1) return false;
+    if (type === 'search' || role === 'searchbox') return true;
+    if (el.closest('[role="search"], search')) return true;
+    var tokens = hintTokens(el);
+    if (tokens.some(function (t) { return SEARCH_HINT_TOKENS.indexOf(t) !== -1; })) return true;
+    var form = el.form;
+    var formHint = form ? (form.getAttribute('action') || '') + ' ' + (form.id || '') + ' ' + (form.getAttribute('name') || '') : '';
+    return /search|query|find/i.test(formHint);
+  }
+
+  // ---------------------------------------------------------------------
+  // Page signals — things only the user can get past (a sign-in wall, a
+  // CAPTCHA). The agent loop pauses and hands over when one is blocking.
+  // ---------------------------------------------------------------------
+
+  var SIGN_IN_PATH_RE = /(^|[/_.-])(log-?in|sign-?in|signon|sso|auth|session)([/_.?-]|$)/i;
+  var SIGN_IN_TEXT_RE =
+    /\b(session (?:has )?(?:expired|timed out)|you (?:have been|are now) (?:logged|signed) out|please (?:log|sign) ?in to (?:continue|proceed|view|access|read))\b/i;
+  var CAPTCHA_SRC_RE = /recaptcha|hcaptcha|turnstile|captcha/i;
+  // A page this short around a sign-in form is the sign-in wall itself, not
+  // a content page with a login box in its header.
+  var WALL_TEXT_CHARS = 2500;
+
+  function textLikeInputs(scope) {
+    var inputs = scope.querySelectorAll('input');
+    var n = 0;
+    for (var i = 0; i < inputs.length; i++) {
+      var type = (inputs[i].getAttribute('type') || 'text').toLowerCase();
+      if (['text', 'email', 'tel'].indexOf(type) !== -1 && isVisible(inputs[i])) n += 1;
+    }
+    return n;
+  }
+
+  function detectLoginWall(pageText) {
+    var pws = document.querySelectorAll('input[type="password" i]');
+    for (var i = 0; i < pws.length; i++) {
+      var pw = pws[i];
+      if (pw.disabled || !isVisible(pw)) continue;
+      // Sign-up and change-password forms ask for a NEW password.
+      if ((pw.getAttribute('autocomplete') || '').toLowerCase() === 'new-password') continue;
+      var scope = pw.form || document;
+      if (textLikeInputs(scope) > 2) continue; // a longer form that merely has a password field
+      var blocking = SIGN_IN_PATH_RE.test(location.pathname) || pageText.length < WALL_TEXT_CHARS;
+      return { reason: 'A sign-in form is showing.', blocking: blocking };
+    }
+    if (SIGN_IN_TEXT_RE.test(pageText)) {
+      return { reason: 'The page says the session ended or a sign-in is needed.', blocking: true };
+    }
+    return null;
+  }
+
+  function isCaptchaFrame(frame) {
+    var src = frame.getAttribute('src') || '';
+    if (!CAPTCHA_SRC_RE.test(src + ' ' + (frame.getAttribute('title') || ''))) return false;
+    // reCAPTCHA v3 / invisible widgets only show a corner badge — not a challenge.
+    if (/size=invisible/i.test(src) || frame.closest('.grecaptcha-badge')) return false;
+    return isVisible(frame);
+  }
+
+  function detectCaptcha() {
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      if (isCaptchaFrame(frames[i])) return { reason: 'A CAPTCHA challenge is showing.', blocking: true };
+    }
+    var widgets = document.querySelectorAll('.g-recaptcha, .h-captcha, .cf-turnstile');
+    for (var w = 0; w < widgets.length; w++) {
+      if (widgets[w].getAttribute('data-size') === 'invisible') continue;
+      if (isVisible(widgets[w])) return { reason: 'A CAPTCHA challenge is showing.', blocking: true };
+    }
+    var inputs = document.querySelectorAll('input');
+    for (var k = 0; k < inputs.length; k++) {
+      if (isVisible(inputs[k]) && hintTokens(inputs[k]).some(function (t) { return t.indexOf('captcha') !== -1; })) {
+        return { reason: 'The page asks for a CAPTCHA code.', blocking: true };
+      }
+    }
+    var imgs = document.querySelectorAll('img');
+    for (var m = 0; m < imgs.length; m++) {
+      var hint = (imgs[m].getAttribute('src') || '') + ' ' + (imgs[m].alt || '') + ' ' + (imgs[m].id || '');
+      if (/captcha/i.test(hint) && isVisible(imgs[m])) {
+        return { reason: 'The page asks for a CAPTCHA code.', blocking: true };
+      }
+    }
+    return null;
+  }
+
+  function detectSignals() {
+    var pageText = '';
+    try {
+      pageText = (document.body && document.body.innerText) || '';
+    } catch (_e) {
+      pageText = '';
+    }
+    return { loginWall: detectLoginWall(pageText), captcha: detectCaptcha() };
   }
 
   function textOf(el) {
@@ -260,7 +414,71 @@
     }
 
     lastElements = elements;
-    return { elements: elements, tree: treeLines.join('\n') };
+    return { elements: elements, tree: treeLines.join('\n'), signals: detectSignals() };
+  }
+
+  /** A ref for any element (e.g. the paragraph a find_text match is in), so
+   * the agent can scroll to it. Not added to the interactive index. */
+  function refFor(el) {
+    var ref = getOrAssignRef(el);
+    refMap.set(ref, makeWeakRef(el));
+    return ref;
+  }
+
+  /** What the SW needs to know about an element before acting on it: is it
+   * a search box or search button, or a plain link? These only browse, so the
+   * SW lets them run without a prompt. `ref` omitted = the focused element;
+   * `nothingFocused` says focus is on the page itself, where a key press has
+   * no field to submit. */
+  function fieldInfo(ref) {
+    var el = ref ? resolveRef(ref).element : document.activeElement;
+    var nothingFocused = !ref && (!el || el === document.body || el === document.documentElement);
+    if (!el) return { found: false, isSearch: false, isLink: false, nothingFocused: nothingFocused };
+    var isSearch = (isSearchField(el) && isSearchOnlyForm(el.form)) || isSearchButton(el);
+    return { found: true, isSearch: isSearch, isLink: isPlainLink(el), nothingFocused: nothingFocused };
+  }
+
+  var NON_TEXT_INPUT_TYPES = ['hidden', 'submit', 'button', 'image', 'reset', 'checkbox', 'radio'];
+
+  /** No form, or a form whose only text fields are search boxes -- so running
+   * it cannot file, send or buy anything along with the query. */
+  function isSearchOnlyForm(form) {
+    if (!form) return true;
+    var fields = form.querySelectorAll('input, textarea');
+    for (var i = 0; i < fields.length; i++) {
+      var type = (fields[i].getAttribute('type') || 'text').toLowerCase();
+      if (NON_TEXT_INPUT_TYPES.indexOf(type) === -1 && !isSearchField(fields[i])) return false;
+    }
+    return true;
+  }
+
+  function isSearchButton(el) {
+    var btn = el.closest('button, input[type="submit"], input[type="image"], [role="button"]');
+    if (!btn) return false;
+    var form = btn.form || btn.closest('form');
+    if (form) {
+      var boxes = form.querySelectorAll('input, textarea, [role="searchbox"], [role="combobox"]');
+      return Array.prototype.some.call(boxes, isSearchField) && isSearchOnlyForm(form);
+    }
+    return !!btn.closest('[role="search"], search');
+  }
+
+  // A link that only takes you somewhere: an http(s) href the page wrote, not
+  // a script hook, a download, a Rails-style data-method, or a label that
+  // reads like an action (sign out, unsubscribe, accept…).
+  var LINK_ACTION_RE =
+    /\b(log ?out|sign ?out|unsubscribe|subscribe|delete|remove|cancel|confirm|approve|accept|decline|reject|archive|follow|unfollow|like|vote|join|leave|enable|disable|activate|deactivate|reset|buy|pay|order|checkout|book|reserve|send|submit)\b/i;
+
+  function isPlainLink(el) {
+    var link = el.closest('a[href]');
+    if (!link || link.hasAttribute('download')) return false;
+    if (link.hasAttribute('data-method') || link.hasAttribute('data-turbo-method')) return false;
+    if ((link.getAttribute('role') || '').toLowerCase() === 'button') return false;
+    var raw = (link.getAttribute('href') || '').trim();
+    if (!raw || raw.charAt(0) === '#') return false;
+    if (!/^https?:$/.test(link.protocol || '')) return false;
+    var label = [link.textContent, link.getAttribute('aria-label'), link.getAttribute('title')].join(' ');
+    return !LINK_ACTION_RE.test(label);
   }
 
   function resolveRef(ref) {
@@ -300,5 +518,8 @@
     buildIndex: buildIndex,
     resolveRef: resolveRef,
     diffNew: diffNew,
+    refFor: refFor,
+    fieldInfo: fieldInfo,
+    detectSignals: detectSignals,
   };
 })();

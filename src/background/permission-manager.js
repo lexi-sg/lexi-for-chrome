@@ -19,6 +19,7 @@
 //   }
 
 import { RISKY_CLASSES, STORAGE_KEYS, DENYLIST } from '../config.js';
+import { httpHostOf, isAllowedHost } from '../agent/host-scope.js';
 
 // ---------------------------------------------------------------------------
 // origin / host helpers
@@ -109,6 +110,11 @@ function classifyByKeyword(text) {
   return null;
 }
 
+// A lone paging key only scrolls; in a text field it just moves the caret.
+// Select-all only selects. Mirrored in tools.js toolActionClass.
+const PAGING_KEYS_RE = /^\s*(page\s?up|page\s?down|page_up|page_down|home|end)\s*$/i;
+const SELECT_ALL_RE = /^\s*(ctrl|cmd|meta|command|control)\s*\+\s*a\s*$/i;
+
 function safeHost(url) {
   if (!url) return null;
   try {
@@ -137,8 +143,14 @@ export function classifyAction(toolName, input) {
       const hint = classifyByKeyword(safeInput.elementName || safeInput.elementText);
       return hint || 'TYPE';
     }
+    case 'select_option': {
+      const hint = classifyByKeyword(safeInput.elementName || safeInput.elementText);
+      return hint || 'SELECT';
+    }
     case 'press_key': {
       const keys = String(safeInput.keys || '');
+      if (PAGING_KEYS_RE.test(keys)) return 'SCROLL';
+      if (SELECT_ALL_RE.test(keys)) return 'SELECT_TEXT';
       return /\b(enter|return)\b/i.test(keys) ? 'SUBMIT' : 'KEY';
     }
     case 'navigate': {
@@ -157,6 +169,10 @@ export function classifyAction(toolName, input) {
       return 'READ';
     case 'find_element':
       return 'READ';
+    case 'find_text':
+      return 'READ';
+    case 'wait_for':
+      return 'WAIT';
     case 'ask_user':
       return 'ASK_USER';
     case 'finish':
@@ -167,23 +183,138 @@ export function classifyAction(toolName, input) {
 }
 
 // ---------------------------------------------------------------------------
+// run scope (a run's host allowlist — see src/agent/host-scope.js)
+// ---------------------------------------------------------------------------
+
+// Only look at (or wait on) the page. Allowed in every approval mode, and in a
+// scoped run on any site, so the agent can always see where it landed and
+// find its way back.
+const OBSERVE_CLASSES = new Set(['READ', 'SCREENSHOT', 'SCROLL', 'SELECT_TEXT', 'WAIT', 'FIND', 'ASK_USER', 'FINISH']);
+const NAVIGATE_CLASSES = new Set(['NAVIGATE', 'NAVIGATE_SAME_DOMAIN', 'NAVIGATE_NEW_DOMAIN', 'NAVIGATE_BACK']);
+// On a scope's allowed sites these run without a prompt in every approval
+// mode. Every RISKY_CLASSES action (pay, delete, upload, download, send, a
+// submit that is not a search) still pauses for the user.
+const SCOPE_PREAPPROVED = new Set(['CLICK', 'TYPE', 'KEY', 'KEY_PRESS', 'SELECT']);
+
+function scopedNavigation(targetUrl, allowedHosts) {
+  const target = httpHostOf(targetUrl);
+  if (!target || !isAllowedHost(target, allowedHosts)) {
+    return {
+      decision: 'block',
+      reason: `${target || 'That address'} is outside this run's allowed sites (${allowedHosts.join(', ')}).`,
+    };
+  }
+  if (isDenylisted(`https://${target}`)) {
+    return { decision: 'block', reason: 'That site is on Lexi’s hard denylist — Lexi will not act there.' };
+  }
+  return { decision: 'allow', reason: `${target} is one of this run's allowed sites.` };
+}
+
+// ---------------------------------------------------------------------------
+// browsing (reading a site, not changing it)
+// ---------------------------------------------------------------------------
+
+// A same-site address that reads like an action rather than a page.
+const ACTION_PATH_RE =
+  /(^|[/_.?=&-])(log-?out|sign-?out|unsubscribe|delete|remove|cancel|deactivate|checkout|pay|purchase|buy)([/_.?=&-]|$)/i;
+
+function sameOriginPage(origin, targetUrl) {
+  if (!origin || !targetUrl) return false;
+  try {
+    const target = new URL(targetUrl, origin);
+    if (!/^https?:$/.test(target.protocol) || target.origin !== new URL(origin).origin) return false;
+    return !ACTION_PATH_RE.test(`${target.pathname}${target.search}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Browsing for information changes nothing on a site: typing a query into
+ * its search box (keys included) and running it, following a plain link (dom-index
+ * isPlainLink) by click or Enter, moving to another page of the same site,
+ * going back. These run without a prompt in every approval mode, so a
+ * read-only task never asks. An Enter with focus on the page itself has no
+ * field to submit, so it is browsing too.
+ */
+function browseDecision(origin, actionClass, { isSearch, isLink, isBack, targetUrl, nothingFocused } = {}) {
+  if (isSearch && ['TYPE', 'SUBMIT', 'CLICK', 'KEY', 'KEY_PRESS'].includes(actionClass)) {
+    return { decision: 'allow', reason: 'Searching a site needs no approval.' };
+  }
+  if (isLink && (actionClass === 'CLICK' || actionClass === 'SUBMIT')) {
+    return { decision: 'allow', reason: 'Following a link needs no approval.' };
+  }
+  if (nothingFocused && actionClass === 'SUBMIT') {
+    return { decision: 'allow', reason: 'Nothing is focused, so Enter has no form to submit.' };
+  }
+  if (NAVIGATE_CLASSES.has(actionClass) && (isBack || sameOriginPage(origin, targetUrl))) {
+    return { decision: 'allow', reason: 'Moving around the same site needs no approval.' };
+  }
+  return null;
+}
+
+function scopeDecision(origin, actionClass, { allowedHosts, isSearch } = {}) {
+  if (OBSERVE_CLASSES.has(actionClass) || NAVIGATE_CLASSES.has(actionClass)) {
+    // Navigation with a target was decided before the origin checks; this is
+    // go_back, which is how the agent leaves a page outside the scope.
+    return { decision: 'allow', reason: 'Looking at the page or going back is always allowed in a scoped run.' };
+  }
+  const host = hostOf(origin);
+  if (!isAllowedHost(host, allowedHosts)) {
+    return {
+      decision: 'block',
+      reason: `This page (${host || 'unknown site'}) is outside this run's allowed sites (${allowedHosts.join(', ')}). Go back or navigate to an allowed site.`,
+    };
+  }
+  if (SCOPE_PREAPPROVED.has(actionClass)) {
+    return { decision: 'allow', reason: `${host} is one of this run's allowed sites.` };
+  }
+  if (actionClass === 'SUBMIT' && isSearch) {
+    return { decision: 'allow', reason: `A search on ${host}, one of this run's allowed sites.` };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // public API
 // ---------------------------------------------------------------------------
 
 /**
- * check(origin, actionClass, approvalMode, toolUseId?) -> {decision, reason}
+ * check(origin, actionClass, approvalMode, toolUseId?, context?) -> {decision, reason}
  * decision is one of 'allow' | 'confirm' | 'block'.
  *
+ * context (all optional, supplied by the SW, never by the page):
+ *   allowedHosts — the run's scope (host allowlist); empty = unscoped run
+ *   targetUrl    — where a navigate call is going
+ *   isSearch     — the call types into, presses Enter in or clicks the button
+ *                  of a search-only form (dom-index fieldInfo)
+ *   isLink       — a click or Enter lands on a plain link (dom-index isPlainLink)
+ *   nothingFocused — a key press lands on the page itself, no field focused
+ *   isBack       — the call is go_back
+ *
  * Order of precedence:
+ *  0. Scoped run, navigation with a target: allowed only to an allowed,
+ *     non-denylisted host — decided first, so a run may start from a new tab.
  *  1. Static DENYLIST always blocks, regardless of any grant or mode.
- *  2. An explicit per-origin grant (always- or once-duration, matching this
+ *  2. Scoped run: observing and go_back are allowed; any other action off the
+ *     allowed hosts is blocked; click/type/key/select and search submits on
+ *     them are allowed without a prompt.
+ *  2b. Observing (read, screenshot, scroll, wait, find) and browsing (a site
+ *     search, a plain link, another page of the same site, going back) are
+ *     allowed in every approval mode.
+ *  3. An explicit per-origin grant (always- or once-duration, matching this
  *     actionClass) allows, even for an otherwise-RISKY_CLASSES action — this
  *     is what backs the confirm card's "always allow SUBMIT on this site"
  *     checkbox and a single already-approved toolUseId.
- *  3. RISKY_CLASSES always require confirm, regardless of approvalMode.
- *  4. Otherwise, gate purely on approvalMode.
+ *  4. RISKY_CLASSES always require confirm, regardless of approvalMode.
+ *  5. Otherwise, gate purely on approvalMode.
  */
-export async function check(origin, actionClass, approvalMode = 'manual', toolUseId = null) {
+export async function check(origin, actionClass, approvalMode = 'manual', toolUseId = null, context = {}) {
+  const allowedHosts = (context && context.allowedHosts) || [];
+  const scoped = allowedHosts.length > 0;
+  if (scoped && NAVIGATE_CLASSES.has(actionClass) && context.targetUrl) {
+    return scopedNavigation(context.targetUrl, allowedHosts);
+  }
   if (isBlockedScheme(origin)) {
     return {
       decision: 'block',
@@ -197,6 +328,19 @@ export async function check(origin, actionClass, approvalMode = 'manual', toolUs
         'This site is on a hard denylist (financial/payment/checkout or credential login page) — Lexi will not act here.',
     };
   }
+
+  if (scoped) {
+    const decision = scopeDecision(origin, actionClass, { allowedHosts, isSearch: !!context.isSearch });
+    if (decision) return decision;
+  }
+
+  // Looking at the page changes nothing on it, so it runs without a prompt in
+  // every approval mode. Manual mode confirms the actions that change a page.
+  if (OBSERVE_CLASSES.has(actionClass)) {
+    return { decision: 'allow', reason: 'Looking at the page needs no approval.' };
+  }
+  const browse = browseDecision(origin, actionClass, context || {});
+  if (browse) return browse;
 
   const grants = await readAllGrants();
   const record = grants[origin];
@@ -217,7 +361,7 @@ export async function check(origin, actionClass, approvalMode = 'manual', toolUs
   if (approvalMode === 'auto') {
     return { decision: 'allow', reason: 'Auto-approve mode — low-risk action runs automatically.' };
   }
-  return { decision: 'confirm', reason: 'Manual approval mode requires confirmation for every action.' };
+  return { decision: 'confirm', reason: 'Manual approval mode requires confirmation for every action that changes the page.' };
 }
 
 /** isAgentEnabled(origin) -> boolean */

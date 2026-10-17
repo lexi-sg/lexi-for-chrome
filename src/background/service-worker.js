@@ -24,7 +24,9 @@ import {
   CONNECT_NONCE_KEY,
   SESSION_PATH,
   REVOKE_PATH,
+  RUN_SCOPES_KEY,
 } from '../config.js';
+import { normalizeAllowedHosts } from '../agent/host-scope.js';
 import { refreshChannelConfig, getActiveConfig, ensureActiveConfig } from './channel-config.js';
 import * as permissionManager from './permission-manager.js';
 import {
@@ -55,6 +57,7 @@ self.__lexiCdp = { isAttached, wasEverAttached };
 const CONTENT_SCRIPT_FILES = [
   'src/content/extract-text.js',
   'src/content/dom-index.js',
+  'src/content/find-text.js',
   'src/content/overlay.js',
   'src/content/content-script.js',
 ];
@@ -161,8 +164,83 @@ async function extractPage(input, tabId) {
   if (mode === 'interactive' || mode === 'both') {
     const idx = await sendToContentScript(tabId, { type: MSG.CS_INDEX });
     result.elements = (idx && idx.elements) || [];
+    result.signals = (idx && idx.signals) || null;
+    // Interactive-only reads still report where the tab is, so the agent
+    // loop notices navigations and leaving a run's allowed sites.
+    if (!result.url && idx) {
+      result.url = idx.url;
+      result.title = idx.title;
+    }
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Run scope — the host allowlist of the agent run on each tab (see
+// src/agent/host-scope.js). Cached in memory for this SW lifetime and kept in
+// chrome.storage.session so a SW restart mid-run still enforces it.
+// ---------------------------------------------------------------------------
+
+// tabId -> {allowedHosts}
+const runScopes = new Map();
+
+async function readStoredScopes() {
+  const data = await chrome.storage.session.get(RUN_SCOPES_KEY).catch(() => ({}));
+  return (data && data[RUN_SCOPES_KEY]) || {};
+}
+
+async function setRunScope(tabId, allowedHosts) {
+  const hosts = normalizeAllowedHosts(allowedHosts);
+  if (hosts.length) runScopes.set(tabId, { allowedHosts: hosts });
+  else runScopes.delete(tabId);
+  const stored = await readStoredScopes();
+  if (hosts.length) stored[tabId] = { allowedHosts: hosts };
+  else delete stored[tabId];
+  await chrome.storage.session.set({ [RUN_SCOPES_KEY]: stored }).catch(() => {});
+}
+
+async function getRunScope(tabId) {
+  if (tabId === undefined || tabId === null) return null;
+  if (runScopes.has(tabId)) return runScopes.get(tabId);
+  const stored = await readStoredScopes();
+  const scope = stored[tabId] || null;
+  if (scope) runScopes.set(tabId, scope);
+  return scope;
+}
+
+/** Is the element a call acts on a search box or button, or a plain link?
+ * No ref = the focused element (press_key). */
+async function elementFacts(tabId, ref) {
+  try {
+    const info = await sendToContentScript(tabId, { type: MSG.CS_FIELD_INFO, ref: ref || null });
+    return {
+      isSearch: !!(info && info.isSearch),
+      isLink: !!(info && info.isLink),
+      nothingFocused: !!(info && info.nothingFocused),
+    };
+  } catch {
+    return { isSearch: false, isLink: false, nothingFocused: false };
+  }
+}
+
+// The classes where the target element decides whether a call only browses.
+const ELEMENT_CHECKED_CLASSES = new Set(['CLICK', 'TYPE', 'SUBMIT', 'KEY', 'KEY_PRESS']);
+
+/** The SW-derived facts permissionManager.check needs beyond origin + class. */
+async function policyContext(tabId, toolName, input, actionClass) {
+  const scope = await getRunScope(tabId);
+  const ref = input && input.ref;
+  // Only a key press acts on the focused element; anything else needs its ref.
+  const checkElement = ELEMENT_CHECKED_CLASSES.has(actionClass) && (ref || toolName === 'press_key');
+  const facts = checkElement ? await elementFacts(tabId, ref) : {};
+  return {
+    allowedHosts: scope ? scope.allowedHosts : [],
+    targetUrl: toolName === 'navigate' && input ? input.url : null,
+    isBack: toolName === 'go_back',
+    isSearch: !!facts.isSearch,
+    isLink: !!facts.isLink,
+    nothingFocused: !!facts.nothingFocused,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,7 +450,8 @@ async function execTool(message, tabId) {
   // agent-loop.js forwards on the input for exactly this re-check.
   const origin = await getTabOrigin(tabId).catch(() => null);
   const actionClass = permissionManager.classifyAction(tool, input);
-  const policy = await permissionManager.check(origin, actionClass, 'manual', toolUseId);
+  const context = await policyContext(tabId, tool, input, actionClass);
+  const policy = await permissionManager.check(origin, actionClass, 'manual', toolUseId, context);
 
   // Hard denylist / browser-internal scheme: never execute.
   if (policy.decision === 'block') {
@@ -440,7 +519,7 @@ async function announceControlMode(tabId) {
 // one-off chrome.runtime.onMessage channel (options page).
 // ---------------------------------------------------------------------------
 
-async function handleMessage(message, senderTabIdHint) {
+async function handleMessage(message, senderTabIdHint, { fromPort = false } = {}) {
   if (!message || !message.type) return null;
   const tabId = message.tabId !== undefined ? message.tabId : senderTabIdHint;
 
@@ -471,7 +550,8 @@ async function handleMessage(message, senderTabIdHint) {
       // observation, leaving its lastKnownUrl null).
       const liveOrigin = await getTabOrigin(tabId).catch(() => null);
       const effectiveOrigin = liveOrigin || origin;
-      const decision = await permissionManager.check(effectiveOrigin, actionClass, approvalMode, toolUseId);
+      const context = await policyContext(tabId, message.name, message.input, actionClass);
+      const decision = await permissionManager.check(effectiveOrigin, actionClass, approvalMode, toolUseId, context);
       return { type: MSG.SITE_POLICY_RESULT, toolUseId, ...decision };
     }
 
@@ -550,6 +630,11 @@ async function handleMessage(message, senderTabIdHint) {
       // signal alongside the panel bar and Chrome's debugger infobar). The
       // overlay is torn down on AGENT_STOP / onDetach below.
       if (tabId !== undefined && tabId !== null) {
+        // The run's host allowlist. Only the side panel's Port may set it
+        // (content scripts can reach onMessage too); every AGENT_START
+        // replaces the previous run's scope, so an unscoped run never
+        // inherits one.
+        if (fromPort) await setRunScope(tabId, message.allowedHosts);
         sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: true }).catch(() => {});
         // Attach the debugger up-front, the way Claude for Chrome does (attach
         // at task start, not lazily on the first click), so Chrome's debugging
@@ -565,6 +650,7 @@ async function handleMessage(message, senderTabIdHint) {
 
     case MSG.AGENT_STOP: {
       if (tabId !== undefined && tabId !== null) {
+        await setRunScope(tabId, []).catch(() => {});
         await detach(tabId).catch(() => {});
         await sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: false }).catch(() => {});
       } else {
@@ -632,7 +718,7 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 
     const tabId = message && message.tabId !== undefined ? message.tabId : entry.tabId;
-    handleMessage(message, tabId)
+    handleMessage(message, tabId, { fromPort: true })
       .then((response) => {
         if (response) {
           // agent-loop.js correlates every request/reply by a `requestId` it
@@ -661,6 +747,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     ports.delete(portId);
     if (entry.tabId !== undefined && entry.tabId !== null) {
+      setRunScope(entry.tabId, []).catch(() => {});
       detach(entry.tabId).catch(() => {});
     }
   });

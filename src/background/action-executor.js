@@ -35,6 +35,7 @@ class NoDebuggerError extends Error {
 const CONTENT_SCRIPT_FILES = [
   'src/content/extract-text.js',
   'src/content/dom-index.js',
+  'src/content/find-text.js',
   'src/content/overlay.js',
   'src/content/content-script.js',
 ];
@@ -218,8 +219,99 @@ async function execReadPage(input, tabId) {
   if (mode === 'interactive' || mode === 'both') {
     const idx = await chrome.tabs.sendMessage(tabId, { type: MSG.CS_INDEX });
     out.elements = idx?.elements || [];
+    out.signals = idx?.signals || null;
   }
   return out;
+}
+
+async function execFindText(input, tabId) {
+  const query = String(input?.query || '').trim();
+  if (!query) return { ok: false, error: 'find_text needs a non-empty query.' };
+  await ensureContentScript(tabId);
+  const res = await chrome.tabs.sendMessage(tabId, {
+    type: MSG.CS_FIND_TEXT,
+    query,
+    maxResults: input?.max_results,
+  });
+  if (!res || res.error || !res.result) {
+    return { ok: false, error: res?.error || 'find_text could not read the page.' };
+  }
+  return { ok: true, result: res.result };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Resolve once the tab has finished loading (or after `timeoutMs`). The
+ * short grace period lets a navigation that was just requested flip the tab
+ * to "loading" before the first look. Returns the tab's final url/title. */
+async function settleTab(tabId, timeoutMs = LIMITS.NAV_SETTLE_MS) {
+  const started = Date.now();
+  await delay(300);
+  let tab = await chrome.tabs.get(tabId);
+  while (tab.status !== 'complete' && Date.now() - started < timeoutMs) {
+    await delay(200);
+    tab = await chrome.tabs.get(tabId);
+  }
+  return { url: tab.url || null, title: tab.title || '', loaded: tab.status === 'complete' };
+}
+
+/** Runs in the page: is the wait_for condition met yet? */
+function pageMeetsCondition(text, selector) {
+  try {
+    if (selector && !document.querySelector(selector)) return { matched: false };
+    if (text) {
+      const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!norm(document.body && document.body.innerText).includes(norm(text))) return { matched: false };
+    }
+    return { matched: true };
+  } catch (err) {
+    return { matched: false, error: `Invalid selector: ${err.message}` };
+  }
+}
+
+async function probeCondition(tabId, cond) {
+  const tab = await chrome.tabs.get(tabId);
+  const url = tab.url || null;
+  if (cond.urlContains && !(url || '').includes(cond.urlContains)) return { matched: false, url };
+  if (!cond.text && !cond.selector) return { matched: tab.status === 'complete', url };
+  try {
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: pageMeetsCondition,
+      args: [cond.text, cond.selector],
+    });
+    return { ...(res?.result || { matched: false }), url };
+  } catch (_e) {
+    return { matched: false, url }; // mid-navigation: no document to look at yet
+  }
+}
+
+/**
+ * wait_for — poll until the page shows `text`, has an element matching
+ * `selector`, and/or its URL contains `url_contains` (all given conditions
+ * must hold). With no condition it waits for the page to finish loading.
+ * A timeout is a normal result ({matched:false}), not a tool failure.
+ */
+async function execWaitFor(input, tabId) {
+  const requested = Number(input?.timeout_ms) || LIMITS.WAIT_DEFAULT_MS;
+  const timeoutMs = Math.min(Math.max(requested, 250), LIMITS.WAIT_MAX_MS);
+  const cond = {
+    text: String(input?.text || '').trim(),
+    selector: String(input?.selector || '').trim(),
+    urlContains: String(input?.url_contains || '').trim(),
+  };
+  const started = Date.now();
+  let probe = { matched: false, url: null };
+  for (;;) {
+    probe = await probeCondition(tabId, cond);
+    if (probe.error) return { ok: false, error: probe.error };
+    if (probe.matched) return { ok: true, result: { matched: true, waited_ms: Date.now() - started, url: probe.url } };
+    if (Date.now() - started >= timeoutMs) break;
+    await delay(250);
+  }
+  return { ok: true, result: { matched: false, timed_out: true, waited_ms: Date.now() - started, url: probe.url } };
 }
 
 /** captureVisibleTab can only photograph the tab the user is currently
@@ -296,7 +388,8 @@ async function execScroll(input, tabId) {
 
 async function execGoBack(tabId) {
   await chrome.tabs.goBack(tabId);
-  return { wentBack: true };
+  const page = await settleTab(tabId);
+  return { wentBack: true, ...page };
 }
 
 async function execNavigate(input, tabId) {
@@ -312,7 +405,8 @@ async function execNavigate(input, tabId) {
   }
   try {
     await chrome.tabs.update(tabId, { url: input.url });
-    return { ok: true, result: { navigatedTo: input.url } };
+    const page = await settleTab(tabId);
+    return { ok: true, result: { navigatedTo: input.url, ...page } };
   } catch (err) {
     return { ok: false, error: describeError(err) };
   }
@@ -382,7 +476,15 @@ async function execTypeText(input, tabId) {
       return { ok: false, error: 'tab navigated mid-action, aborted' };
     }
     await cdp.clickAt(tabId, cx, cy);
-    await cdp.typeText(tabId, input.text ?? '');
+    // The text replaces what the field held, as in the fallback path: select
+    // its contents so the inserted text overwrites them (the click alone
+    // leaves the caret wherever it landed).
+    const text = input.text ?? '';
+    await chrome.tabs
+      .sendMessage(tabId, { type: MSG.CS_SYNTHETIC_ACTION, action: 'selectContents', ref: input.ref })
+      .catch(() => {});
+    if (text) await cdp.typeText(tabId, text);
+    else await cdp.pressKeys(tabId, 'Backspace');
     if (input.submit) {
       await cdp.pressKeys(tabId, 'Enter');
     }
@@ -408,6 +510,32 @@ async function execTypeText(input, tabId) {
     }
     return { ok: false, error: describeError(err) };
   }
+}
+
+/** select_option — pick an option in a native <select> by its label or
+ * value. Always a synthetic value-set + input/change (the browser draws the
+ * option list itself, so a trusted click cannot pick from it). */
+async function execSelectOption(input, tabId) {
+  const originBefore = input.originAtQueue || (await currentOrigin(tabId));
+  const refInfo = await resolveRef(tabId, input.ref);
+  if (!refInfo.found) {
+    return { ok: false, error: `Element ${input.ref} was not found on the page (it may have scrolled away or changed).` };
+  }
+  if (refInfo.sensitive) {
+    return { ok: false, error: 'Refusing to change a sensitive field. Call ask_user instead.' };
+  }
+  const originNow = await currentOrigin(tabId);
+  if (originBefore && originNow && originBefore !== originNow) {
+    return { ok: false, error: 'tab navigated mid-action, aborted' };
+  }
+  const res = await chrome.tabs.sendMessage(tabId, {
+    type: MSG.CS_SYNTHETIC_ACTION,
+    action: 'select',
+    ref: input.ref,
+    option: String(input.option ?? ''),
+  });
+  if (!res?.ok) return { ok: false, error: res?.error || 'Selecting the option failed.' };
+  return { ok: true, result: res.result };
 }
 
 async function execPressKey(input, tabId) {
@@ -436,7 +564,8 @@ async function execPressKey(input, tabId) {
  * Execute a single agent tool call. Returns {ok, result?, error?}.
  *
  * toolName is one of the names in tools.js's TOOLS (read_page, screenshot,
- * click, type_text, press_key, scroll, navigate, go_back, find_element).
+ * click, type_text, select_option, press_key, scroll, navigate, go_back,
+ * find_text, wait_for, find_element).
  * ask_user and finish never reach here -- they terminate/park the loop
  * entirely client-side in agent-loop.js.
  */
@@ -459,6 +588,12 @@ export async function execute(toolName, input, tabId) {
         return await execTypeText(input, tabId);
       case 'press_key':
         return await execPressKey(input, tabId);
+      case 'select_option':
+        return await execSelectOption(input, tabId);
+      case 'find_text':
+        return await execFindText(input, tabId);
+      case 'wait_for':
+        return await execWaitFor(input, tabId);
       case 'find_element':
         // find_element is resolved client-side by agent-loop.js: it needs a
         // nested Anthropic (Haiku) call over the read_page index text the

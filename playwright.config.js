@@ -19,10 +19,16 @@
 const isLite = !!process.env.LEXI_LITE;
 const isAccountMode = !!process.env.LEXI_ACCOUNT_MODE;
 const isChannel = !!process.env.LEXI_CHANNEL;
+// Hermetic Agent Mode tool suite (find_text, wait_for, select_option, run
+// scope, sign-in/CAPTCHA hand-over) — test/agent-tools.spec.js, opt-in behind
+// LEXI_AGENT_TOOLS for the same reason.
+const isAgentTools = !!process.env.LEXI_AGENT_TOOLS;
 
 module.exports = {
   testDir: './test',
-  testMatch: isChannel
+  testMatch: isAgentTools
+    ? /agent-tools\.spec\.js$/
+    : isChannel
     ? /channel-config\.spec\.js$/
     : isAccountMode
       ? /account-mode\.spec\.js$/

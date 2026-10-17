@@ -11,15 +11,23 @@ import { MSG, LIMITS, DEFAULT_MODEL, FIND_MODEL } from '../config.js';
 import { streamMessage, imageBlock, AuthError, ForbiddenError, RateLimitError, OverloadedError } from './anthropic-client.js';
 import { TOOLS, toolActionClass } from './tools.js';
 import { buildAgentSystem, wrapUntrusted, sanitize, scrubOutbound } from '../prompts/system-prompts.js';
+import { normalizeAllowedHosts, httpHostOf, isAllowedHost } from './host-scope.js';
 
 const MAX_SCREENSHOTS_KEPT = 3;
 const VISUAL_TASK_RE = /screenshot|image|photo|scan(?:ned)?|chart|diagram|signature|logo|picture|graphic|exhibit/i;
 // Rough char-per-token heuristic (~4 chars/token) used only to decide when
 // the running conversation needs its oldest tool turns trimmed.
 const MAX_INPUT_CHARS = LIMITS.MAX_TOKENS_INPUT_CHARS || 180000 * 4;
+// Tools whose results carry page-controlled text (snippets, option labels,
+// page titles, URLs) — sanitized and wrapped as untrusted like read_page.
+const PAGE_DERIVED_RESULTS = new Set(['find_text', 'select_option', 'navigate', 'go_back', 'wait_for']);
 
 /**
- * createAgentRun({port, tabId, task, model, approvalMode, apiKey, onEvent})
+ * createAgentRun({port, tabId, task, model, approvalMode, apiKey, allowedHosts, onEvent})
+ *
+ * allowedHosts (optional) scopes the run to those sites: the service worker
+ * blocks any action elsewhere and pre-approves click/type/select/search on
+ * them (risky actions still confirm). Omitted = an ordinary, unscoped run.
  *
  * Returns {start(), stop(), resolveConfirm(toolUseId, approved, opts),
  * provideAnswer(toolUseId, answerText)}. `start()` kicks the loop off
@@ -33,13 +41,15 @@ const MAX_INPUT_CHARS = LIMITS.MAX_TOKENS_INPUT_CHARS || 180000 * 4;
  *   {type:'tool_intent', name, id, input?}         - drives the acting bar
  *   {type:'confirm', toolUseId, name, input, actionClass, origin, reason}
  *        - a risky action needs approval; call resolveConfirm() with the result
- *   {type:'ask_user', toolUseId, question}         - the model asked a
- *        question; call provideAnswer() with the user's reply
+ *   {type:'ask_user', toolUseId, question, handover?} - the model asked a
+ *        question, or (handover:true) the page shows a sign-in wall or a
+ *        CAPTCHA only the user can get past; call provideAnswer() with the
+ *        user's reply
  *   {type:'tokensSaved', tokens, total}            - old-screenshot trimming
  *   {type:'sw_event', raw}                         - passthrough of an
  *        unsolicited AGENT_STATUS/AGENT_ACTING message from the service worker
  */
-export function createAgentRun({ port, tabId, task, model, approvalMode, auth, apiKey, onEvent }) {
+export function createAgentRun({ port, tabId, task, model, approvalMode, auth, apiKey, allowedHosts, onEvent }) {
   // Auth descriptor for the transport: {mode:'account',token,baseUrl} routes
   // through the landed proxy; {mode:'byok',apiKey} hits api.anthropic.com
   // directly (escape hatch). A bare apiKey is accepted for backwards compat.
@@ -50,6 +60,8 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
     model: model || DEFAULT_MODEL,
     approvalMode: approvalMode || 'manual',
     auth: resolvedAuth,
+    allowedHosts: normalizeAllowedHosts(allowedHosts),
+    handedOver: new Set(), // page+reason keys the user was already asked to clear
     messages: [],
     step: 0,
     maxSteps: LIMITS.MAX_STEPS,
@@ -227,7 +239,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
 
   async function loop() {
     try {
-      port.postMessage({ type: MSG.AGENT_START, tabId: run.tabId, task: run.task });
+      port.postMessage({ type: MSG.AGENT_START, tabId: run.tabId, task: run.task, allowedHosts: run.allowedHosts });
     } catch {
       /* ignore */
     }
@@ -314,12 +326,76 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
     run.lastKnownUrl = newUrl || run.lastKnownUrl;
   }
 
+  /** Reads the page; if it shows a blocking sign-in wall or CAPTCHA, hands
+   * the tab to the user first and reads it again once they reply. */
+  async function readPageForStep(mode) {
+    let page = await requestPageContent(mode);
+    recordObservation(page);
+    const handover = await handOverIfBlocked(page);
+    if (handover && !run.stopped) {
+      page = await requestPageContent(mode);
+      recordObservation(page);
+    }
+    return { page, handover };
+  }
+
+  /**
+   * A sign-in wall or CAPTCHA only the user can get past: pause the run and
+   * hand the tab over, once per page and reason, before the model acts on
+   * it. Lexi never types passwords, codes or CAPTCHA answers itself.
+   */
+  async function handOverIfBlocked(page) {
+    const signals = (page && page.signals) || {};
+    const blocker = [signals.captcha, signals.loginWall].find((s) => s && s.blocking);
+    if (!blocker || run.stopped) return null;
+    const key = `${page.url || ''}|${blocker.reason}`;
+    if (run.handedOver.has(key)) return null;
+    run.handedOver.add(key);
+
+    const where = httpHostOf(page.url) || 'this page';
+    const what = blocker === signals.captcha ? 'solve the CAPTCHA' : 'sign in';
+    const id = `handover_${crypto.randomUUID()}`;
+    emit({ type: 'status', status: 'awaiting_confirm' });
+    emit({
+      type: 'ask_user',
+      toolUseId: id,
+      handover: true,
+      question: `${blocker.reason} Please ${what} on ${where} yourself — Lexi never types passwords, codes or CAPTCHA answers. Reply here when you're done, or tell me to stop.`,
+    });
+    const resolution = await waitForResolution(id, 'ask_user');
+    return { reason: blocker.reason, answer: resolution.answer || '' };
+  }
+
+  /** <system-reminder> notes about the page state the model must not miss. */
+  function pageNotes(page, handover) {
+    const notes = [];
+    if (handover) {
+      notes.push(
+        `The run paused because: ${handover.reason} The user was asked to take over and replied: ${JSON.stringify(handover.answer)}. The page below was read after that reply.`,
+      );
+    }
+    const signals = (page && page.signals) || {};
+    if (signals.captcha) {
+      notes.push(`${signals.captcha.reason} Never try to solve it — call ask_user so the user can.`);
+    }
+    if (signals.loginWall) {
+      notes.push(`${signals.loginWall.reason} Never type credentials or codes — if the task needs the user signed in, call ask_user.`);
+    }
+    const host = httpHostOf(page && page.url);
+    if (run.allowedHosts.length && host && !isAllowedHost(host, run.allowedHosts)) {
+      notes.push(
+        `This page (${host}) is outside this run's allowed sites (${run.allowedHosts.join(', ')}). Actions here are blocked — use go_back or navigate to an allowed site.`,
+      );
+    }
+    return notes.map((text) => ({ type: 'text', text: `<system-reminder>${text}</system-reminder>` }));
+  }
+
   /** Seeds the conversation with the task + an initial full page perception. */
   async function observe() {
     let page = { text: '', elements: [], truncated: false, url: null, title: '' };
+    let handover = null;
     try {
-      page = await requestPageContent('both');
-      recordObservation(page);
+      ({ page, handover } = await readPageForStep('both'));
     } catch {
       // Extraction can legitimately fail (activeTab lost the gesture, the
       // tab navigated away). Proceed with an empty perception — the model
@@ -328,6 +404,9 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
     run.prevRefs = new Set((page.elements || []).map((el) => el.ref));
 
     const contentBlocks = [{ type: 'text', text: `Task: ${run.task}` }];
+    if (run.allowedHosts.length) {
+      contentBlocks.push({ type: 'text', text: `Allowed sites for this task: ${run.allowedHosts.join(', ')}.` });
+    }
 
     const pageText = sanitize(page.text || '');
     const tree = renderInteractiveTree(page.elements || []);
@@ -339,6 +418,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
           `Interactive elements:\n${tree}`
       ),
     });
+    contentBlocks.push(...pageNotes(page, handover));
 
     if (VISUAL_TASK_RE.test(run.task)) {
       try {
@@ -360,11 +440,11 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
   async function observeForNextStep() {
     const blocks = [];
     try {
-      const page = await requestPageContent('interactive');
+      const { page, handover } = await readPageForStep('interactive');
       const tree = renderInteractiveTree(page.elements || [], run.prevRefs);
-      recordObservation(page);
       run.prevRefs = new Set((page.elements || []).map((el) => el.ref));
       blocks.push({ type: 'text', text: wrapUntrusted(`Current interactive elements:\n${tree}`) });
+      blocks.push(...pageNotes(page, handover));
     } catch (err) {
       blocks.push({ type: 'text', text: `[Could not refresh page state: ${err.message}]` });
     }
@@ -656,7 +736,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
    */
   function enrichToolInput(name, input) {
     const enriched = { ...(input || {}) };
-    if ((name === 'click' || name === 'type_text') && enriched.ref && !enriched.elementName) {
+    if ((name === 'click' || name === 'type_text' || name === 'select_option') && enriched.ref && !enriched.elementName) {
       const match = (run.lastElements || []).find((e) => e && e.ref === enriched.ref);
       if (match && match.name) enriched.elementName = match.name;
     }
@@ -664,7 +744,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
       enriched.currentUrl = run.lastKnownUrl;
     }
     if (
-      ['click', 'type_text', 'press_key', 'navigate'].includes(name) &&
+      ['click', 'type_text', 'select_option', 'press_key', 'navigate'].includes(name) &&
       run.lastKnownUrl &&
       !enriched.originAtQueue
     ) {
@@ -686,6 +766,9 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
         origin,
         actionClass,
         approvalMode: run.approvalMode,
+        // The SW derives scope facts (navigate target, search box) from these.
+        name,
+        input: enriched,
       });
     } catch (err) {
       run.consecutiveFailures += 1;
@@ -759,14 +842,26 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
       const parts = [];
       if (result.text) parts.push(sanitize(result.text));
       if (Array.isArray(result.elements)) parts.push(renderInteractiveTree(result.elements));
-      if (result.truncated) parts.push('[page text truncated]');
+      if (result.truncated) parts.push('[page text truncated — use find_text to search the whole page]');
       return wrapUntrusted(parts.join('\n\n'));
+    }
+    if (PAGE_DERIVED_RESULTS.has(name)) {
+      return wrapUntrusted(JSON.stringify(sanitizeStrings(result)));
     }
     try {
       return JSON.stringify(result);
     } catch {
       return String(result);
     }
+  }
+
+  function sanitizeStrings(value) {
+    if (typeof value === 'string') return sanitize(value);
+    if (Array.isArray(value)) return value.map(sanitizeStrings);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, sanitizeStrings(v)]));
+    }
+    return value;
   }
 
   function toolResult(toolUseId, text, isError, benign = false) {
