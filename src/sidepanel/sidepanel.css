@@ -45,31 +45,56 @@ img {
 }
 
 /* ============================ DESIGN TOKENS ============================ */
+/* Light is the Lexi web app's current palette (lexi-frontend
+   tailwind.config.js, Oct 2026): a slate-50 page, white cards, dark-slate
+   primary actions, blue links and slate greys. Teal survives only in the
+   accent mark. The web app has no dark theme; the dark set below is the
+   panel's own, built on the app's navy chrome. */
 
-:root {
-  /* Light theme (default) — Lexi app tokens (app.getlexi.io, slate/ink) */
-  --lexi-bg: #ffffff;
-  --lexi-surface: #f8fafc;
-  --lexi-text: #0f172a;
-  --lexi-muted: #64748b;
-  --lexi-border: #e2e8f0;
-  /* Brand teal — the real Lexi accent (logo mark / in-chat GreetingHero /
-     extension icon128), NOT the starter-kit violet. Historical brand.teal
-     ramp, verbatim. */
-  --lexi-accent: #045b6c;
-  --lexi-accent-strong: #034552;
-  --lexi-accent-tint: #b2dfe5;
-  /* Flat neutral user-message surface, mirroring the app chat's
-     bg_color.messagebox (#e7e7e6) — deliberately NOT brand-colored. */
-  --lexi-user-bubble: #e7e7e6;
-  --lexi-risk: #dc2626;
-  --lexi-warn: #f59e0b;
-  --lexi-ok: #16a34a;
-  --lexi-r: 10px;
-
-  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --lexi-shadow-md: 0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 34px rgba(15, 23, 42, 0.06);
+:root,
+:root[data-theme="light"] {
+  --lexi-bg: #f8fafc; /* bg_color.page */
+  --lexi-surface: #ffffff; /* cards, composer, chips, menus */
+  --lexi-hover: #f4f4f4; /* light-200: hovered rows, ghost buttons */
+  --lexi-text: #0f172a; /* text_color.primary */
+  --lexi-prose: #374151; /* assistant answer body (prose-sm) */
+  --lexi-muted: #64748b; /* text_color.tertiary */
+  --lexi-placeholder: #8c8c8c; /* greys-300 */
+  --lexi-border: #e2e8f0; /* dividers (gray-200) */
+  --lexi-field-border: #eaeaea; /* light-300: composer, chips, outline buttons */
+  --lexi-field-border-hover: #dfdfdf; /* light-400 */
+  --lexi-chip-text: #5e6470; /* primary-dark-300 */
+  --lexi-accent: #0f172a; /* brand.action: primary buttons, selected pills */
+  --lexi-accent-strong: #1e293b; /* brand.action-hover */
+  --lexi-accent-tint: #f1f5f9; /* slate-100: selected and hover tint */
+  --lexi-on-accent: #ffffff; /* text and icons on an accent fill */
+  --lexi-link: #0076d8; /* highlight-600 */
+  --lexi-link-hover: #004882; /* highlight-800 */
+  --lexi-brand-mark: #045b6c; /* the teal accent mark beside the greeting */
+  --lexi-user-bubble: #e7e7e6; /* bg_color.messagebox */
+  --lexi-risk: #cc2827; /* error */
+  --lexi-warn: #de9c31; /* alert */
+  --lexi-warn-bg: #fcf5ea; /* alert-50 */
+  --lexi-warn-border: #f0d1a0; /* alert-200 */
+  --lexi-warn-text: #7a561b; /* alert-800 */
+  --lexi-ok: #14874e; /* success */
+  --lexi-r: 12px; /* rounded-xl: cards, banners, menus */
+  --lexi-r-sm: 8px; /* rounded-lg: buttons, chips-as-rows */
+  /* Agent activity timeline: the web app's slate greys (gray-300…700),
+     greys-600 / dark-300 header and error red. */
+  --lexi-step-icon: #94a3b8;
+  --lexi-step-meta: #94a3b8;
+  --lexi-step-text: #64748b;
+  --lexi-step-label: #334155;
+  --lexi-step-line: #cbd5e1;
+  --lexi-step-chip-border: #e2e8f0;
+  --lexi-step-chip-hover: #f1f5f9;
+  --lexi-step-head: #6c6c6c;
+  --lexi-step-head-hover: #383838;
+  --lexi-step-error: #cc2827;
+  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --lexi-shadow-md: 0 1px 1px rgba(15, 23, 42, 0.04), 0 12px 17px rgba(15, 23, 42, 0.06);
+  --lexi-shadow-lg: 0 1px 2px rgba(15, 23, 42, 0.05), 0 16px 28px rgba(15, 23, 42, 0.08);
   --lexi-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter,
     Helvetica, Arial, sans-serif;
   --lexi-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -77,55 +102,86 @@ img {
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Derived from the app's one true dark surface: the navy nav rail */
-    --lexi-bg: #0e1522;
-    --lexi-surface: #232e40;
+  :root:not([data-theme="light"]) {
+    --lexi-bg: #0e1522; /* brand.navy */
+    --lexi-surface: #1b2534; /* brand.navy-hover */
+    --lexi-hover: #232e40; /* brand.navy-light */
     --lexi-text: #f1f5f9;
+    --lexi-prose: #e2e8f0;
     --lexi-muted: #94a3b8;
-    --lexi-border: #2e3a4d;
-    /* Dark surfaces lift to the marketing site's brighter teal-green, proven
-       to read cleanly on a near-black background. */
-    --lexi-accent: #24cda5;
-    --lexi-accent-strong: #1aab88;
-    --lexi-accent-tint: rgba(36, 205, 165, 0.16);
+    --lexi-placeholder: #7c8ba1;
+    --lexi-border: #2e3a4d; /* brand.navy-border */
+    --lexi-field-border: #2e3a4d;
+    --lexi-field-border-hover: #3b4a60;
+    --lexi-chip-text: #cbd5e1;
+    /* On navy the web app's chrome turns white (inverted mark, white rail
+       items), so the primary action is a light fill with dark text. */
+    --lexi-accent: #f1f5f9;
+    --lexi-accent-strong: #ffffff;
+    --lexi-accent-tint: #232e40;
+    --lexi-on-accent: #0f172a;
+    --lexi-link: #60a5fa;
+    --lexi-link-hover: #93c5fd;
+    --lexi-brand-mark: #f1f5f9;
     --lexi-user-bubble: #232e40;
+    --lexi-warn-bg: rgba(222, 156, 49, 0.12);
+    --lexi-warn-border: rgba(222, 156, 49, 0.4);
+    --lexi-warn-text: #f0d1a0;
+    --lexi-step-icon: #64748b;
+    --lexi-step-meta: #7c8ba1;
+    --lexi-step-text: #94a3b8;
+    --lexi-step-label: #cbd5e1;
+    --lexi-step-line: #3b4a60;
+    --lexi-step-chip-border: #2e3a4d;
+    --lexi-step-chip-hover: #232e40;
+    --lexi-step-head: #a3adbb;
+    --lexi-step-head-hover: #e2e8f0;
+    --lexi-step-error: #f87171;
     --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --lexi-shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.35);
+    --lexi-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 28px rgba(0, 0, 0, 0.45);
   }
 }
 
-/* Explicit override wins over the OS setting either way. */
-:root[data-theme="light"] {
-  --lexi-bg: #ffffff;
-  --lexi-surface: #f8fafc;
-  --lexi-text: #0f172a;
-  --lexi-muted: #64748b;
-  --lexi-border: #e2e8f0;
-  --lexi-accent: #045b6c;
-  --lexi-accent-strong: #034552;
-  --lexi-accent-tint: #b2dfe5;
-  --lexi-user-bubble: #e7e7e6;
-  --lexi-risk: #dc2626;
-  --lexi-warn: #f59e0b;
-  --lexi-ok: #16a34a;
-  --lexi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --lexi-shadow-md: 0 1px 2px rgba(15, 23, 42, 0.04),
-    0 12px 34px rgba(15, 23, 42, 0.06);
-}
-
+/* An explicit data-theme wins over the OS setting either way. */
 :root[data-theme="dark"] {
-  --lexi-bg: #0e1522;
-  --lexi-surface: #232e40;
+  --lexi-bg: #0e1522; /* brand.navy */
+  --lexi-surface: #1b2534; /* brand.navy-hover */
+  --lexi-hover: #232e40; /* brand.navy-light */
   --lexi-text: #f1f5f9;
+  --lexi-prose: #e2e8f0;
   --lexi-muted: #94a3b8;
-  --lexi-border: #2e3a4d;
-  --lexi-accent: #24cda5;
-  --lexi-accent-strong: #1aab88;
-  --lexi-accent-tint: rgba(36, 205, 165, 0.16);
+  --lexi-placeholder: #7c8ba1;
+  --lexi-border: #2e3a4d; /* brand.navy-border */
+  --lexi-field-border: #2e3a4d;
+  --lexi-field-border-hover: #3b4a60;
+  --lexi-chip-text: #cbd5e1;
+  /* On navy the web app's chrome turns white (inverted mark, white rail
+     items), so the primary action is a light fill with dark text. */
+  --lexi-accent: #f1f5f9;
+  --lexi-accent-strong: #ffffff;
+  --lexi-accent-tint: #232e40;
+  --lexi-on-accent: #0f172a;
+  --lexi-link: #60a5fa;
+  --lexi-link-hover: #93c5fd;
+  --lexi-brand-mark: #f1f5f9;
   --lexi-user-bubble: #232e40;
+  --lexi-warn-bg: rgba(222, 156, 49, 0.12);
+  --lexi-warn-border: rgba(222, 156, 49, 0.4);
+  --lexi-warn-text: #f0d1a0;
+  --lexi-step-icon: #64748b;
+  --lexi-step-meta: #7c8ba1;
+  --lexi-step-text: #94a3b8;
+  --lexi-step-label: #cbd5e1;
+  --lexi-step-line: #3b4a60;
+  --lexi-step-chip-border: #2e3a4d;
+  --lexi-step-chip-hover: #232e40;
+  --lexi-step-head: #a3adbb;
+  --lexi-step-head-hover: #e2e8f0;
+  --lexi-step-error: #f87171;
   --lexi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --lexi-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --lexi-shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px rgba(0, 0, 0, 0.35);
+  --lexi-shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 28px rgba(0, 0, 0, 0.45);
 }
 
 /* ============================== BASE =================================== */
@@ -165,26 +221,20 @@ body {
   background: var(--lexi-bg);
 }
 
+/* The web app's lockup (BrandLockup): the mark and the serif name, inline in
+   currentColor; two SVGs so a narrow panel can drop the name. */
 #lexi-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   flex: 0 0 auto;
-}
-
-#lexi-mark {
-  display: block;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  flex: 0 0 auto;
-}
-
-#lexi-logo {
-  font-weight: 700;
-  font-size: 16px;
   color: var(--lexi-text);
-  letter-spacing: -0.01em;
+}
+
+#lexi-mark,
+#lexi-logo {
+  display: block;
+  flex: 0 0 auto;
 }
 
 #model-picker {
@@ -219,7 +269,7 @@ body {
 }
 
 #settings-btn:hover {
-  background: var(--lexi-surface);
+  background: var(--lexi-hover);
   color: var(--lexi-text);
 }
 
@@ -233,8 +283,8 @@ body {
   margin: 8px 12px 0;
   padding: 6px 10px;
   background: var(--lexi-surface);
-  border: 1px solid var(--lexi-border);
-  border-radius: var(--lexi-r);
+  border: 1px solid var(--lexi-field-border);
+  border-radius: var(--lexi-r-sm);
   font-size: 12px;
   color: var(--lexi-muted);
 }
@@ -284,8 +334,8 @@ body {
   gap: 10px;
   margin: 8px 12px 0;
   padding: 10px 12px;
-  background: var(--lexi-accent-tint);
-  border: 1px solid var(--lexi-accent);
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-field-border);
   border-radius: var(--lexi-r);
   font-size: 12.5px;
 }
@@ -293,9 +343,9 @@ body {
 #key-banner-btn {
   flex: 0 0 auto;
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--lexi-r-sm);
   padding: 6px 12px;
   font-weight: 600;
   font-size: 12px;
@@ -317,6 +367,8 @@ body {
   flex-direction: column;
   gap: 16px;
   scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
 }
 
 .lexi-msg {
@@ -332,7 +384,7 @@ body {
   background: var(--lexi-user-bubble);
   color: var(--lexi-text);
   border-radius: 16px;
-  padding: 10px 14px;
+  padding: 10px 16px;
 }
 
 /* Assistant message: no bubble background at all — flat text, left-aligned,
@@ -341,6 +393,11 @@ body {
   align-self: stretch;
   max-width: 100%;
   padding: 0 2px 0 4px;
+  color: var(--lexi-prose);
+}
+
+.lexi-msg-assistant strong {
+  color: var(--lexi-text);
 }
 
 .lexi-msg-assistant p {
@@ -357,6 +414,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   margin: 12px 0 6px;
+  color: var(--lexi-text);
 }
 
 .lexi-msg-assistant ul,
@@ -390,7 +448,13 @@ body {
 }
 
 .lexi-msg-assistant a {
-  color: var(--lexi-accent);
+  color: var(--lexi-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lexi-msg-assistant a:hover {
+  color: var(--lexi-link-hover);
 }
 
 .lexi-table-scroll {
@@ -476,11 +540,12 @@ body {
 .lexi-caret {
   display: inline-block;
   width: 2px;
-  height: 14px;
-  margin-left: 2px;
-  background: var(--lexi-accent);
-  vertical-align: text-bottom;
-  animation: lexi-blink 1s step-start infinite;
+  height: 1.05em;
+  margin-left: 1px;
+  border-radius: 2px;
+  background: var(--lexi-step-icon);
+  vertical-align: -0.12em;
+  animation: lexi-cursor-fade 1.1s ease-in-out infinite;
 }
 
 .lexi-tokens-saved {
@@ -497,7 +562,7 @@ body {
   gap: 4px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--lexi-warn);
+  color: var(--lexi-warn-text);
   margin-bottom: 6px;
 }
 
@@ -552,21 +617,24 @@ body {
 }
 
 .lexi-btn {
-  border: none;
-  border-radius: 999px;
+  border: 1px solid transparent;
+  border-radius: var(--lexi-r-sm);
   padding: 7px 14px;
   font-size: 12.5px;
   font-weight: 600;
-  transition: transform 120ms ease, background-color 120ms ease;
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms ease;
 }
 
-.lexi-btn:active {
-  transform: translateY(1px);
+/* The web app's press feedback. */
+.lexi-btn:active,
+#send-btn:active,
+#signin-btn:active {
+  transform: scale(0.97);
 }
 
 .lexi-btn-accent {
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
 }
 
 .lexi-btn-accent:hover {
@@ -574,12 +642,13 @@ body {
 }
 
 .lexi-btn-muted {
-  background: var(--lexi-border);
+  background: var(--lexi-surface);
+  border-color: var(--lexi-field-border);
   color: var(--lexi-text);
 }
 
 .lexi-btn-muted:hover {
-  filter: brightness(0.95);
+  background: var(--lexi-hover);
 }
 
 /* ============================== ACTING BAR ============================== */
@@ -591,7 +660,7 @@ body {
   gap: 8px;
   margin: 0 12px 8px;
   padding: 8px 12px;
-  border-radius: var(--lexi-r);
+  border-radius: var(--lexi-r-sm);
   background: var(--lexi-risk);
   color: #fff;
   font-size: 12.5px;
@@ -674,9 +743,9 @@ body {
 #agent-enable-btn {
   flex: 0 0 auto;
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--lexi-r-sm);
   padding: 6px 12px;
   font-weight: 600;
   font-size: 12px;
@@ -710,34 +779,32 @@ body {
   display: none;
 }
 
+/* White outline pill, as the web app's SuggestionChips: the border and text
+   darken on hover with a faint shadow. */
 .lexi-chip {
   flex: 0 0 auto;
   white-space: nowrap;
-  background: var(--lexi-bg);
-  border: 1px solid var(--lexi-border);
-  color: var(--lexi-muted);
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-field-border);
+  color: var(--lexi-chip-text);
   border-radius: 999px;
-  padding: 7px 13px;
-  font-size: 12px;
-  transition: transform 120ms ease, border-color 120ms ease,
-    background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  padding: 6px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
-/* Neutral outline pill (app SuggestionChips), with a light branded teal
-   hover/selected state. */
 .lexi-chip:hover {
-  transform: translateY(-1px);
-  border-color: var(--lexi-accent);
-  color: var(--lexi-accent-strong);
-  background: var(--lexi-accent-tint);
+  border-color: var(--lexi-field-border-hover);
+  color: var(--lexi-text);
   box-shadow: var(--lexi-shadow-sm);
 }
 
 #quick-actions-more {
   flex: 0 0 auto;
-  background: transparent;
-  border: 1px solid var(--lexi-border);
-  color: var(--lexi-muted);
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-field-border);
+  color: var(--lexi-chip-text);
   border-radius: 999px;
   padding: 6px 10px;
   font-size: 12px;
@@ -748,10 +815,10 @@ body {
   bottom: 100%;
   right: 12px;
   margin-bottom: 6px;
-  background: var(--lexi-bg);
+  background: var(--lexi-surface);
   border: 1px solid var(--lexi-border);
   border-radius: var(--lexi-r);
-  box-shadow: var(--lexi-shadow-md);
+  box-shadow: var(--lexi-shadow-lg);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -771,7 +838,7 @@ body {
 }
 
 #secondary-actions-menu button:hover {
-  background: var(--lexi-surface);
+  background: var(--lexi-hover);
 }
 
 /* =============================== COST HINT =============================== */
@@ -791,8 +858,7 @@ body {
 
 #composer {
   flex: 0 0 auto;
-  border-top: 1px solid var(--lexi-border);
-  padding: 10px 12px 8px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -804,7 +870,7 @@ body {
   display: inline-flex;
   align-self: flex-start;
   background: var(--lexi-surface);
-  border: 1px solid var(--lexi-border);
+  border: 1px solid var(--lexi-field-border);
   border-radius: 999px;
   padding: 2px;
 }
@@ -822,26 +888,26 @@ body {
 
 #mode-toggle button[aria-selected="true"] {
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
 }
 
+/* The web app's ComposerBox: a white card with a hairline border and a soft
+   shadow that deepens on focus — no focus ring. */
 #composer-input-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: var(--lexi-bg);
-  border: 1px solid var(--lexi-border);
-  border-radius: 20px;
-  padding: 6px 6px 6px 14px;
-  box-shadow: var(--lexi-shadow-sm);
+  background: var(--lexi-surface);
+  border: 1px solid var(--lexi-field-border);
+  border-radius: 16px;
+  padding: 8px 8px 8px 14px;
+  box-shadow: var(--lexi-shadow-md);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
-/* App composer affordance: the border/shadow deepen on focus — no visible
-   focus ring. */
 #composer-input-row:focus-within {
-  border-color: var(--lexi-accent);
-  box-shadow: var(--lexi-shadow-md);
+  border-color: var(--lexi-field-border-hover);
+  box-shadow: var(--lexi-shadow-lg);
 }
 
 #prompt-input {
@@ -853,26 +919,27 @@ body {
   color: var(--lexi-text);
   max-height: 120px;
   min-height: 20px;
-  line-height: 1.4;
-  padding: 6px 0;
+  line-height: 1.5;
+  letter-spacing: 0.035px;
+  padding: 4px 0;
 }
 
 #prompt-input::placeholder {
-  color: var(--lexi-muted);
+  color: var(--lexi-placeholder);
 }
 
 #send-btn {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: none;
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background-color 120ms ease, opacity 120ms ease;
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms ease, color 120ms ease;
 }
 
 #send-btn:hover {
@@ -880,8 +947,10 @@ body {
 }
 
 #send-btn:disabled {
-  opacity: 0.5;
+  background: var(--lexi-field-border);
+  color: var(--lexi-placeholder);
   cursor: default;
+  transform: none;
 }
 
 #slash-menu {
@@ -913,7 +982,7 @@ body {
 
 .lexi-slash-item:hover,
 .lexi-slash-item.lexi-slash-active {
-  background: var(--lexi-accent-tint);
+  background: var(--lexi-hover);
 }
 
 .lexi-slash-item .lexi-slash-cmd {
@@ -942,8 +1011,8 @@ body {
   width: 100%;
   padding: 7px 10px;
   background: var(--lexi-surface);
-  border: 1px solid var(--lexi-border);
-  border-radius: var(--lexi-r);
+  border: 1px solid var(--lexi-field-border);
+  border-radius: var(--lexi-r-sm);
   font-size: 12.5px;
   color: var(--lexi-text);
 }
@@ -954,7 +1023,7 @@ body {
   height: 22px;
   border-radius: 999px;
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -984,7 +1053,7 @@ body {
   background: var(--lexi-surface);
   border: 1px solid var(--lexi-border);
   border-radius: var(--lexi-r);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--lexi-shadow-lg);
   padding: 8px;
 }
 
@@ -996,7 +1065,7 @@ body {
   margin-bottom: 6px;
 }
 
-#account-signout-btn {
+#account-menu #account-signout-btn {
   width: 100%;
   text-align: left;
   padding: 6px 6px;
@@ -1007,8 +1076,8 @@ body {
   border-radius: 6px;
 }
 
-#account-signout-btn:hover {
-  background: var(--lexi-accent-tint);
+#account-menu #account-signout-btn:hover {
+  background: var(--lexi-hover);
 }
 
 /* ============================ SIGN-IN SCREEN ============================== */
@@ -1033,22 +1102,9 @@ body {
 }
 
 #signin-logo {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
   justify-content: center;
-  gap: 10px;
-}
-
-#signin-mark {
-  display: block;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-}
-
-#signin-wordmark {
-  font-weight: 800;
-  font-size: 22px;
+  margin-bottom: 6px;
   color: var(--lexi-text);
 }
 
@@ -1068,9 +1124,10 @@ body {
 #signin-btn {
   margin-top: 6px;
   background: var(--lexi-accent);
-  color: #fff;
+  color: var(--lexi-on-accent);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--lexi-r-sm);
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms ease;
   padding: 10px 16px;
   font-weight: 700;
   font-size: 13.5px;
@@ -1167,9 +1224,9 @@ body {
 
 .lexi-context-banner {
   font-size: 11.5px;
-  color: var(--lexi-warn);
-  background: var(--lexi-accent-tint);
-  border: 1px solid var(--lexi-warn);
+  color: var(--lexi-warn-text);
+  background: var(--lexi-warn-bg);
+  border: 1px solid var(--lexi-warn-border);
   border-radius: 8px;
   padding: 6px 10px;
   margin-bottom: 8px;
@@ -1188,14 +1245,27 @@ body {
 
 /* ================================ EMPTY STATE ============================== */
 
+/* The web app's greeting carries the teal accent mark; here it sits over the
+   prompt. */
 #messages:empty::before {
+  content: "";
+  display: block;
+  width: 25px;
+  height: 28px;
+  margin: auto auto 0;
+  background: var(--lexi-brand-mark);
+  -webkit-mask: url("../../icons/lexi-mark.svg") center / contain no-repeat;
+  mask: url("../../icons/lexi-mark.svg") center / contain no-repeat;
+}
+
+#messages:empty::after {
   content: "Ask a question about the page you're on, or try a quick action below.";
   display: block;
-  margin: auto;
+  margin: 0 auto auto;
   text-align: center;
   color: var(--lexi-muted);
   font-size: 13px;
-  padding: 32px 24px;
+  padding: 12px 24px 32px;
 }
 
 /* ================================ ANIMATIONS ================================ */
@@ -1211,9 +1281,13 @@ body {
   }
 }
 
-@keyframes lexi-blink {
+@keyframes lexi-cursor-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
   50% {
-    opacity: 0;
+    opacity: 0.15;
   }
 }
 
