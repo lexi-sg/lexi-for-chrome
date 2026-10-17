@@ -550,11 +550,79 @@ async function resolveTargetTab() {
   }
 
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const query = followWindowId === null ? { currentWindow: true } : { windowId: followWindowId };
+    const [tab] = await chrome.tabs.query({ active: true, ...query });
     return tab || null;
   } catch (err) {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Following the active tab
+// ---------------------------------------------------------------------------
+//
+// One side panel serves every tab in its window, so the tab Lexi reads follows
+// the one the user is looking at. A run stays on the tab it started on: a
+// switch made during a run is applied when the run ends. A ?testTabId= panel
+// never switches; a ?testWindowId= panel (Playwright, where the panel is a tab
+// in another window) follows that window.
+
+/** The window whose active tab the panel follows; set in boot(). */
+let followWindowId = null;
+/** A tab switch seen during a run, applied when the run ends. */
+let tabSwitchPending = false;
+let tabRefreshSeq = 0;
+
+async function resolveFollowWindowId() {
+  const testWindowId = new URLSearchParams(location.search).get('testWindowId');
+  if (testWindowId) return Number(testWindowId);
+  try {
+    return (await chrome.windows.getCurrent()).id;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Re-reads the active tab and adopts it. Its url and title can show up after
+ * the switch, once a toolbar click on it grants access. */
+async function refreshCurrentTab() {
+  const seq = ++tabRefreshSeq;
+  const tab = await resolveTargetTab();
+  if (seq === tabRefreshSeq) adoptTab(tab);
+}
+
+function adoptTab(tab) {
+  if (!tab) return;
+  const switched = !currentTab || tab.id !== currentTab.id;
+  if (switched && (agentRun || chatRunActive)) {
+    tabSwitchPending = true;
+    return;
+  }
+  if (switched) tabSwitchPending = false;
+  currentTab = tab;
+  renderContextChip();
+  // Re-register so the SW routes this tab's broadcasts (AGENT_STOP, …) here.
+  if (switched) port?.postMessage({ type: MSG.PORT_HELLO, tabId: tab.id });
+  if (currentMode === 'agent' && !agentRun) refreshAgentEnableRow();
+}
+
+function applyTabSwitchAfterRun() {
+  if (tabSwitchPending) refreshCurrentTab();
+}
+
+function watchActiveTab() {
+  const pinned = new URLSearchParams(location.search).has('testTabId');
+  chrome.tabs.onActivated.addListener(({ windowId }) => {
+    if (!pinned && windowId === followWindowId) refreshCurrentTab();
+  });
+  chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+    if (!currentTab || tabId !== currentTab.id) return;
+    if (change.url || change.title || change.favIconUrl) adoptTab(tab);
+  });
+  // A toolbar click grants access to a tab without firing a tab event; coming
+  // back to the panel picks up its url and title.
+  window.addEventListener('focus', () => refreshCurrentTab());
 }
 
 function renderContextChip() {
@@ -563,7 +631,8 @@ function renderContextChip() {
     el.contextFavicon.removeAttribute('src');
     return;
   }
-  el.contextTitle.textContent = currentTab.title || currentTab.url || 'Untitled page';
+  // No title or url means Lexi has no access to the tab yet.
+  el.contextTitle.textContent = currentTab.title || currentTab.url || 'Lexi can’t see this tab yet';
   if (currentTab.favIconUrl) {
     el.contextFavicon.src = currentTab.favIconUrl;
   } else {
@@ -1066,6 +1135,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
   } finally {
     chatRunActive = false;
     el.sendBtn.disabled = false;
+    applyTabSwitchAfterRun();
   }
 }
 
@@ -1287,6 +1357,7 @@ async function runProductChat(userMessage, opts = {}) {
     chatRunActive = false;
     chatAbortController = null;
     el.sendBtn.disabled = sessionExpired;
+    applyTabSwitchAfterRun();
   }
 }
 
@@ -1434,6 +1505,7 @@ function finishAgentRun(status, event) {
     pendingAgentAsk = null;
     el.promptInput.placeholder = 'Describe the task Lexi should do on this page…';
   }
+  applyTabSwitchAfterRun();
 }
 
 function setActingBar(visible, intentText) {
@@ -1589,6 +1661,7 @@ async function boot() {
     })
     .catch(() => {});
 
+  followWindowId = await resolveFollowWindowId();
   const [loadedSettings, resolvedTab, nano] = await Promise.all([
     requestSettings().catch(() => ({})),
     resolveTargetTab(),
@@ -1609,6 +1682,7 @@ async function boot() {
   if (currentTab && currentTab.id !== undefined) {
     port?.postMessage({ type: MSG.PORT_HELLO, tabId: currentTab.id });
   }
+  watchActiveTab();
 }
 
 // Keep this already-open panel's cached channel config LIVE across a server-

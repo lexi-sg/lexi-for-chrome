@@ -88,15 +88,20 @@ function startMockBackend() {
     });
     writeSse(res, 'stream_start', { conversation_id: 4242, public_uuid: 'mock-conv-uuid' });
     writeSse(res, 'block_start', { seq: 1, block_index: 0, block: { type: 'text', purpose: 'answer' } });
-    writeSse(res, 'block_delta', {
-      seq: 2,
-      block_index: 0,
-      delta: { kind: 'text', text: ANSWER_TEXT },
-    });
-    writeSse(res, 'block_stop', { seq: 3, block_index: 0, final: { status: 'done' } });
-    writeSse(res, 'follow_up_questions', { follow_up_questions: FOLLOW_UPS });
-    writeSse(res, 'stream_complete', { seq: 4 });
-    res.end();
+    const finish = () => {
+      writeSse(res, 'block_delta', {
+        seq: 2,
+        block_index: 0,
+        delta: { kind: 'text', text: ANSWER_TEXT },
+      });
+      writeSse(res, 'block_stop', { seq: 3, block_index: 0, final: { status: 'done' } });
+      writeSse(res, 'follow_up_questions', { follow_up_questions: FOLLOW_UPS });
+      writeSse(res, 'stream_complete', { seq: 4 });
+      res.end();
+    };
+    // SLOW_REPLY holds the answer open, so a test can act mid-answer.
+    if (/SLOW_REPLY/.test(userMessage)) setTimeout(finish, 2500);
+    else finish();
   }
 
   const server = http.createServer((req, res) => {
@@ -200,6 +205,11 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
       if (req.url === '/' || req.url?.startsWith('/test-fixtures.html')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(fixtureHtml);
+      } else if (req.url?.startsWith('/other/')) {
+        // A second page per name, for the tab-following test.
+        const name = req.url.slice('/other/'.length).replace(/[^a-z0-9-]/gi, '');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(`<title>Other page ${name}</title><p>Security deposit schedule for page ${name}.</p>`);
       } else {
         res.writeHead(404);
         res.end('not found');
@@ -337,6 +347,64 @@ test.describe('account mode — hermetic product-chat (mocked backend)', () => {
       .toBeGreaterThan(0);
     const chipTexts = (await chips.allTextContents()).join(' | ');
     expect(FOLLOW_UPS.some((q) => chipTexts.includes(q))).toBe(true);
+  });
+
+  test('the panel follows the active tab, holds it during an answer, and a pinned panel stays put', async () => {
+    const sw = context.serviceWorkers()[0];
+    const tabs = (fn, arg) => sw.evaluate(fn, arg);
+    const origin = new URL(fixturesUrl).origin;
+    const fixturesTab = await tabs((url) => chrome.tabs.query({ url }).then((t) => t[0]), fixturesUrl);
+    const otherTab = await tabs(
+      ({ windowId, url }) => chrome.tabs.create({ windowId, url, active: false }),
+      { windowId: fixturesTab.windowId, url: `${origin}/other/one` },
+    );
+    await expect.poll(() => tabs((id) => chrome.tabs.get(id).then((t) => t.status), otherTab.id)).toBe('complete');
+    const activate = (id) => tabs((tabId) => chrome.tabs.update(tabId, { active: true }), id);
+
+    // A real side panel lives in the window it follows; this one is a tab in
+    // a window of its own, so it is pointed at the fixtures window.
+    const opened = context.waitForEvent('page', (p) => p.url().includes('testWindowId='));
+    await tabs(
+      (url) => chrome.windows.create({ url, focused: false }),
+      `chrome-extension://${extensionId}/src/sidepanel/sidepanel.html?testWindowId=${fixturesTab.windowId}`,
+    );
+    const follow = await opened;
+    await follow.waitForLoadState('load');
+    const chip = follow.locator('#context-title');
+
+    await activate(fixturesTab.id);
+    await expect(chip).toHaveText(/Lexi Test Fixtures/);
+    await activate(otherTab.id);
+    await expect(chip).toHaveText('Other page one');
+    // The pinned (?testTabId=) panel stays on its tab.
+    await expect(panel.locator('#context-title')).toHaveText(/Lexi Test Fixtures/);
+
+    // Navigating the followed tab updates the chip.
+    await tabs(({ id, url }) => chrome.tabs.update(id, { url }), { id: otherTab.id, url: `${origin}/other/two` });
+    await expect(chip).toHaveText('Other page two');
+
+    // Chat reads the tab the user is on.
+    mockCalls.length = 0;
+    await follow.locator('#prompt-input').fill('What is on this page?');
+    await follow.locator('#send-btn').click();
+    await expect.poll(() => mockCalls.filter((c) => c.url === '/llm/chat').length, { timeout: 15_000 }).toBe(1);
+    const pageContext = JSON.parse(mockCalls.find((c) => c.url === '/llm/chat').body).metadata.page_context;
+    expect(pageContext.url).toBe(`${origin}/other/two`);
+    expect(pageContext.text).toContain('Security deposit schedule for page two');
+    await expect(follow.locator('#send-btn')).toBeEnabled({ timeout: 15_000 });
+
+    // A switch made mid-answer waits for the answer to finish.
+    await follow.locator('#prompt-input').fill('SLOW_REPLY please.');
+    await follow.locator('#send-btn').click();
+    await expect(follow.locator('#send-btn')).toBeDisabled();
+    await activate(fixturesTab.id);
+    await follow.waitForTimeout(500);
+    await expect(chip).toHaveText('Other page two');
+    await expect(follow.locator('#send-btn')).toBeEnabled({ timeout: 15_000 });
+    await expect(chip).toHaveText(/Lexi Test Fixtures/);
+
+    await follow.close();
+    await tabs((id) => chrome.tabs.remove(id), otherTab.id);
   });
 
   test('a 401 from the mock flips the session-expiry banner and disables the composer', async () => {
