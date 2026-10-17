@@ -900,6 +900,8 @@ el.agentEnableBtn.addEventListener('click', async () => {
   const { granted } = await requestAgentPermission(origin);
   if (granted) {
     el.agentEnableRow.hidden = true;
+    // Back to the task the user was writing (or had tried to send).
+    el.promptInput.focus();
   }
 });
 
@@ -947,6 +949,13 @@ el.promptInput.addEventListener('keydown', (e) => {
   }
 });
 
+/** Puts back a message that could not be sent, unless the box has new text. */
+function restoreDraft(text) {
+  if (el.promptInput.value.trim()) return;
+  el.promptInput.value = text;
+  autosizePromptInput();
+}
+
 function ensureReadyToSend() {
   if (sessionExpired) {
     showSessionExpiredBanner();
@@ -965,7 +974,10 @@ function ensureReadyToSend() {
 }
 
 async function handleChatSend(text) {
-  if (!ensureReadyToSend()) return;
+  if (!ensureReadyToSend()) {
+    restoreDraft(text);
+    return;
+  }
   renderer.appendUser(text);
   // Account mode -> the real product chat pipeline (/llm/chat). BYOK escape
   // hatch -> the local Anthropic see-only tool loop (unchanged).
@@ -1321,11 +1333,17 @@ function agentAuthDescriptor() {
 }
 
 async function handleAgentSend(task) {
-  if (!ensureReadyToSend()) return;
+  if (!ensureReadyToSend()) {
+    restoreDraft(task);
+    return;
+  }
   const origin = originOf(currentTab.url);
   const enabled = await isAgentEnabled(origin);
   if (!enabled) {
+    // Nothing was sent: keep the task in the box and point at the switch.
+    restoreDraft(task);
     el.agentEnableRow.hidden = false;
+    el.agentEnableBtn.focus();
     return;
   }
 

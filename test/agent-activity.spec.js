@@ -362,4 +362,21 @@ test.describe('agent activity timeline', () => {
     expect(await page.evaluate(() => ({ ...document.body.dataset }))).toEqual({ searched: '1' });
     expect(mock.calls).toHaveLength(SCRIPT.length);
   });
+
+  test('a task sent where agent actions are off stays in the box, next to the switch', async () => {
+    // Agent actions switched off for the fixture site.
+    await panel.evaluate(() => chrome.storage.local.set({ lexi_site_grants: {} }));
+
+    mock.calls.length = 0;
+    const users = await panel.locator('.lexi-msg-user').count();
+    const task = 'Search for Maneka Gandhi and open the judgment.';
+    await panel.locator('#prompt-input').fill(task);
+    await panel.locator('#send-btn').click();
+
+    await expect(panel.locator('#agent-enable-btn')).toBeFocused();
+    await expect(panel.locator('#prompt-input')).toHaveValue(task);
+    await expect(panel.locator('#agent-enable-row')).toBeVisible();
+    await expect(panel.locator('.lexi-msg-user')).toHaveCount(users);
+    expect(mock.calls).toHaveLength(0);
+  });
 });
