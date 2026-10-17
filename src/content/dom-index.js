@@ -10,7 +10,7 @@
 // window.__lexi.domIndex.resolveRef(ref)   -> {found, element, bbox, sensitive}
 // window.__lexi.domIndex.diffNew(prevRefs) -> string[] refs new since prevRefs
 // window.__lexi.domIndex.refFor(el)        -> ref for any element (scroll target)
-// window.__lexi.domIndex.fieldInfo(ref?)   -> {found, isSearch, isLink}
+// window.__lexi.domIndex.fieldInfo(ref?)   -> {found, isSearch, isLink, nothingFocused}
 // window.__lexi.domIndex.detectSignals()   -> {loginWall, captcha} ({reason, blocking} | null each)
 
 (function () {
@@ -427,12 +427,15 @@
 
   /** What the SW needs to know about an element before acting on it: is it
    * a search box or search button, or a plain link? These only browse, so the
-   * SW lets them run without a prompt. `ref` omitted = the focused element. */
+   * SW lets them run without a prompt. `ref` omitted = the focused element;
+   * `nothingFocused` says focus is on the page itself, where a key press has
+   * no field to submit. */
   function fieldInfo(ref) {
     var el = ref ? resolveRef(ref).element : document.activeElement;
-    if (!el) return { found: false, isSearch: false, isLink: false };
+    var nothingFocused = !ref && (!el || el === document.body || el === document.documentElement);
+    if (!el) return { found: false, isSearch: false, isLink: false, nothingFocused: nothingFocused };
     var isSearch = (isSearchField(el) && isSearchOnlyForm(el.form)) || isSearchButton(el);
-    return { found: true, isSearch: isSearch, isLink: isPlainLink(el) };
+    return { found: true, isSearch: isSearch, isLink: isPlainLink(el), nothingFocused: nothingFocused };
   }
 
   var NON_TEXT_INPUT_TYPES = ['hidden', 'submit', 'button', 'image', 'reset', 'checkbox', 'radio'];

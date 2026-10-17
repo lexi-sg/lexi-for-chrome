@@ -750,6 +750,18 @@ test.describe('agent tools — real extension, loopback fixtures, mock model', (
     for (const name of ['Sign out', 'Open panel', 'Get the PDF', 'Back to top', 'Mark item 7']) {
       expect((await policy('CLICK', 'click', { ref: linkRef(name) })).decision, name).toBe('confirm');
     }
+    // Enter on a focused plain link follows it; with focus on the page itself
+    // it has no form to submit. Both browse. Enter on a link that acts, or any
+    // other key with nothing focused, still asks.
+    const enter = () => policy('SUBMIT', 'press_key', { keys: 'Enter' });
+    await page.focus('a[href="/judgment"]');
+    expect((await enter()).decision).toBe('allow');
+    await page.focus('a[href="/logout"]');
+    expect((await enter()).decision).toBe('confirm');
+    await page.evaluate(() => document.activeElement.blur());
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    expect((await enter()).decision).toBe('allow');
+    expect((await policy('KEY', 'press_key', { keys: 'Tab' })).decision).toBe('confirm');
 
     // Another page of the same site and going back are browsing; another
     // site, or a same-site address that acts, still asks.

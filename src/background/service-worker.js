@@ -213,9 +213,13 @@ async function getRunScope(tabId) {
 async function elementFacts(tabId, ref) {
   try {
     const info = await sendToContentScript(tabId, { type: MSG.CS_FIELD_INFO, ref: ref || null });
-    return { isSearch: !!(info && info.isSearch), isLink: !!(info && info.isLink) };
+    return {
+      isSearch: !!(info && info.isSearch),
+      isLink: !!(info && info.isLink),
+      nothingFocused: !!(info && info.nothingFocused),
+    };
   } catch {
-    return { isSearch: false, isLink: false };
+    return { isSearch: false, isLink: false, nothingFocused: false };
   }
 }
 
@@ -235,6 +239,7 @@ async function policyContext(tabId, toolName, input, actionClass) {
     isBack: toolName === 'go_back',
     isSearch: !!facts.isSearch,
     isLink: !!facts.isLink,
+    nothingFocused: !!facts.nothingFocused,
   };
 }
 

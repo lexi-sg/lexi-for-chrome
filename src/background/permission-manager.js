@@ -232,15 +232,20 @@ function sameOriginPage(origin, targetUrl) {
 /**
  * Browsing for information changes nothing on a site: typing a query into
  * its search box (keys included) and running it, following a plain link (dom-index
- * isPlainLink), moving to another page of the same site, going back. These
- * run without a prompt in every approval mode, so a read-only task never asks.
+ * isPlainLink) by click or Enter, moving to another page of the same site,
+ * going back. These run without a prompt in every approval mode, so a
+ * read-only task never asks. An Enter with focus on the page itself has no
+ * field to submit, so it is browsing too.
  */
-function browseDecision(origin, actionClass, { isSearch, isLink, isBack, targetUrl } = {}) {
+function browseDecision(origin, actionClass, { isSearch, isLink, isBack, targetUrl, nothingFocused } = {}) {
   if (isSearch && ['TYPE', 'SUBMIT', 'CLICK', 'KEY', 'KEY_PRESS'].includes(actionClass)) {
     return { decision: 'allow', reason: 'Searching a site needs no approval.' };
   }
-  if (isLink && actionClass === 'CLICK') {
+  if (isLink && (actionClass === 'CLICK' || actionClass === 'SUBMIT')) {
     return { decision: 'allow', reason: 'Following a link needs no approval.' };
+  }
+  if (nothingFocused && actionClass === 'SUBMIT') {
+    return { decision: 'allow', reason: 'Nothing is focused, so Enter has no form to submit.' };
   }
   if (NAVIGATE_CLASSES.has(actionClass) && (isBack || sameOriginPage(origin, targetUrl))) {
     return { decision: 'allow', reason: 'Moving around the same site needs no approval.' };
@@ -283,7 +288,8 @@ function scopeDecision(origin, actionClass, { allowedHosts, isSearch } = {}) {
  *   targetUrl    — where a navigate call is going
  *   isSearch     — the call types into, presses Enter in or clicks the button
  *                  of a search-only form (dom-index fieldInfo)
- *   isLink       — a click lands on a plain link (dom-index isPlainLink)
+ *   isLink       — a click or Enter lands on a plain link (dom-index isPlainLink)
+ *   nothingFocused — a key press lands on the page itself, no field focused
  *   isBack       — the call is go_back
  *
  * Order of precedence:

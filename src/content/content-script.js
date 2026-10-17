@@ -144,12 +144,18 @@
   }
 
   // ---------------------------------------------------------------------
-  // CS_FIELD_INFO{ref?} -> CS_FIELD{found, isSearch, isLink}
+  // CS_FIELD_INFO{ref?} -> CS_FIELD{found, isSearch, isLink, nothingFocused}
   // ---------------------------------------------------------------------
   function handleFieldInfo(message, sendResponse) {
     try {
       var info = lexi().domIndex.fieldInfo(message && message.ref);
-      sendResponse({ type: MSG.CS_FIELD, found: !!info.found, isSearch: !!info.isSearch, isLink: !!info.isLink });
+      sendResponse({
+        type: MSG.CS_FIELD,
+        found: !!info.found,
+        isSearch: !!info.isSearch,
+        isLink: !!info.isLink,
+        nothingFocused: !!info.nothingFocused,
+      });
     } catch (err) {
       sendResponse({ type: MSG.CS_FIELD, found: false, isSearch: false, isLink: false, error: errMessage(err) });
     }

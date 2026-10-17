@@ -221,9 +221,10 @@ While active:
   search (below).
 - Reading and browsing never ask, in any mode: read, find, screenshot,
   scroll, wait, a site's own search (typing the query and running it, when
-  the form holds nothing but search boxes), following a plain link, another
-  page of the same site, and going back. So a read-only task runs without a
-  prompt. Manual Approve confirms every other action that can change a page.
+  the form holds nothing but search boxes), following a plain link (by click
+  or Enter), an Enter with nothing focused, another page of the same site,
+  and going back. So a read-only task runs without a prompt. Manual Approve
+  confirms every other action that can change a page.
 - Typing into password or payment fields, account creation, financial
   transactions, and permanent deletion are **hard-blocked** in every mode —
   the model is instructed to call `ask_user` instead.
