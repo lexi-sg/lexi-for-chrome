@@ -38,6 +38,7 @@ import {
 import { QUICK_ACTIONS, SECONDARY } from '../prompts/quick-action-templates.js';
 import { isAgentEnabled } from '../background/permission-manager.js';
 import { createRenderer } from './chat-render.js';
+import { createAgentActivity } from './agent-activity.js';
 import { streamProductChat } from './product-chat-client.js';
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,7 @@ const el = {
   actingIntent: document.getElementById('acting-intent'),
   actingControl: document.getElementById('acting-control'),
   stopBtn: document.getElementById('stop-btn'),
+  chatStopBtn: document.getElementById('chat-stop-btn'),
   agentEnableRow: document.getElementById('agent-enable-row'),
   agentEnableBtn: document.getElementById('agent-enable-btn'),
   quickActions: document.getElementById('quick-actions'),
@@ -138,7 +140,8 @@ let productConversationId = 0;
 
 /** Agent-mode run handle from createAgentRun(). */
 let agentRun = null;
-let agentAssistantHandle = null;
+/** The run's timeline in the message log (agent-activity.js). */
+let agentActivity = null;
 /** toolUseId of an in-flight ask_user the agent is parked on, if any. */
 let pendingAgentAsk = null;
 /** Quick action awaiting the user's question in the composer ("Screenshot &
@@ -897,6 +900,8 @@ el.agentEnableBtn.addEventListener('click', async () => {
   const { granted } = await requestAgentPermission(origin);
   if (granted) {
     el.agentEnableRow.hidden = true;
+    // Back to the task the user was writing (or had tried to send).
+    el.promptInput.focus();
   }
 });
 
@@ -944,6 +949,13 @@ el.promptInput.addEventListener('keydown', (e) => {
   }
 });
 
+/** Puts back a message that could not be sent, unless the box has new text. */
+function restoreDraft(text) {
+  if (el.promptInput.value.trim()) return;
+  el.promptInput.value = text;
+  autosizePromptInput();
+}
+
 function ensureReadyToSend() {
   if (sessionExpired) {
     showSessionExpiredBanner();
@@ -962,7 +974,10 @@ function ensureReadyToSend() {
 }
 
 async function handleChatSend(text) {
-  if (!ensureReadyToSend()) return;
+  if (!ensureReadyToSend()) {
+    restoreDraft(text);
+    return;
+  }
   renderer.appendUser(text);
   // Account mode -> the real product chat pipeline (/llm/chat). BYOK escape
   // hatch -> the local Anthropic see-only tool loop (unchanged).
@@ -999,6 +1014,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
   if (chatRunActive) return;
   chatRunActive = true;
   el.sendBtn.disabled = true;
+  showChatStop(true);
 
   chatConversation.push({ role: 'user', content: userContentBlocks });
 
@@ -1066,6 +1082,7 @@ async function runChatCompletion(userContentBlocks, opts = {}) {
   } finally {
     chatRunActive = false;
     el.sendBtn.disabled = false;
+    showChatStop(false);
   }
 }
 
@@ -1192,6 +1209,7 @@ async function runProductChat(userMessage, opts = {}) {
   if (chatRunActive) return;
   chatRunActive = true;
   el.sendBtn.disabled = true;
+  showChatStop(true);
 
   const handle = renderer.startAssistant();
   if (opts.previewImage) handle.appendImage(opts.previewImage);
@@ -1274,6 +1292,9 @@ async function runProductChat(userMessage, opts = {}) {
       onEvent,
     });
     handle.finalize();
+    // A Stop that lands between reads ends the stream quietly rather than
+    // with an AbortError; say so either way.
+    if (chatAbortController.signal.aborted) renderer.appendSystemNote('Stopped.');
   } catch (err) {
     handle.finalize();
     if (err && err.name === 'AuthError') {
@@ -1287,6 +1308,7 @@ async function runProductChat(userMessage, opts = {}) {
     chatRunActive = false;
     chatAbortController = null;
     el.sendBtn.disabled = sessionExpired;
+    showChatStop(false);
   }
 }
 
@@ -1311,16 +1333,25 @@ function agentAuthDescriptor() {
 }
 
 async function handleAgentSend(task) {
-  if (!ensureReadyToSend()) return;
+  if (!ensureReadyToSend()) {
+    restoreDraft(task);
+    return;
+  }
   const origin = originOf(currentTab.url);
   const enabled = await isAgentEnabled(origin);
   if (!enabled) {
+    // Nothing was sent: keep the task in the box and point at the switch.
+    restoreDraft(task);
     el.agentEnableRow.hidden = false;
+    el.agentEnableBtn.focus();
     return;
   }
 
   renderer.appendUser(task);
-  agentAssistantHandle = null;
+  agentActivity = createAgentActivity(el.messages);
+  clearTimeout(actingBarHideTimer);
+  actingBarHideTimer = null;
+  el.actingBar.classList.remove('lexi-acting-done');
   setActingControl(null); // reset; the SW reports trusted/fallback on AGENT_ACTING
   setActingBar(true, 'Lexi is starting…');
 
@@ -1341,25 +1372,35 @@ function handleAgentEvent(event) {
 
   switch (event.type) {
     case 'text':
-      if (!agentAssistantHandle) agentAssistantHandle = renderer.startAssistant();
-      agentAssistantHandle.pushDelta(event.delta);
+      activity().text(event.delta);
       break;
 
-    // agent-loop.js emits 'tool_intent' (underscore) with {name, id, input?}.
+    case 'thinking':
+      activity().thought(event.text);
+      break;
+
+    // agent-loop.js emits 'tool_intent' (underscore) with {name, id, input?, target?}.
     case 'tool_intent':
       setActingBar(true, intentTextFor(event));
+      activity().toolIntent(event);
+      break;
+
+    case 'tool_result':
+      activity().toolResult(event);
       break;
 
     case 'status':
+      if ((event.status || event.state) === 'thinking') activity().thinking();
       applyAgentStatus(event);
       break;
 
     // agent-loop.js emits {type:'tokensSaved', tokens, total}.
     case 'tokensSaved':
-      agentAssistantHandle?.addTokensSaved(event.tokens || 0);
+      activity().addTokensSaved(event.tokens || 0);
       break;
 
     case 'confirm':
+      activity().toolWaiting(event.toolUseId, 'Waiting for your approval…');
       renderConfirmCard(event);
       break;
 
@@ -1374,6 +1415,12 @@ function handleAgentEvent(event) {
     default:
       break;
   }
+}
+
+/** The current run's timeline; events that outlive their run start a new one. */
+function activity() {
+  if (!agentActivity) agentActivity = createAgentActivity(el.messages);
+  return agentActivity;
 }
 
 /** Human-readable acting-bar text for a tool_intent event from agent-loop. */
@@ -1397,7 +1444,9 @@ function intentTextFor(event) {
 function applyAgentStatus(event) {
   const status = event.status || event.state;
   if (status === 'thinking') {
-    setActingBar(false);
+    // The run is still live while the model works out its next step, so the
+    // bar (and its Stop) stays up.
+    setActingBar(true, 'Thinking…');
   } else if (status === 'acting' || status === 'awaiting_confirm') {
     setActingBar(true, event.intent || 'Lexi is acting');
   } else if (status === 'done' || status === 'stopped' || status === 'error') {
@@ -1406,9 +1455,9 @@ function applyAgentStatus(event) {
 }
 
 function finishAgentRun(status, event) {
-  if (agentAssistantHandle) {
-    agentAssistantHandle.finalize();
-    agentAssistantHandle = null;
+  if (agentActivity) {
+    agentActivity.finish(status, { injectionFlagged: !!(event && event.injectionFlagged) });
+    agentActivity = null;
   }
   if (status === 'error') {
     // agent-loop.js emits errors as {status:'error', error:{type, message}}.
@@ -1424,7 +1473,8 @@ function finishAgentRun(status, event) {
   el.actingBar.classList.add('lexi-acting-done');
   el.actingIntent.textContent = status === 'error' ? 'Lexi hit an error' : 'Done';
   setActingControl(null);
-  setTimeout(() => {
+  actingBarHideTimer = setTimeout(() => {
+    actingBarHideTimer = null;
     el.actingBar.hidden = true;
     el.actingBar.classList.remove('lexi-acting-done');
   }, 1500);
@@ -1435,6 +1485,9 @@ function finishAgentRun(status, event) {
     el.promptInput.placeholder = 'Describe the task Lexi should do on this page…';
   }
 }
+
+// Pending hide of the last run's "Done" bar; a new run cancels it.
+let actingBarHideTimer = null;
 
 function setActingBar(visible, intentText) {
   el.actingBar.hidden = !visible;
@@ -1473,9 +1526,19 @@ function renderControlBadge() {
   badge.classList.toggle('lexi-control-fallback', !trusted);
 }
 
+/** While a chat answer streams, the composer's Send button becomes Stop. */
+function showChatStop(running) {
+  el.sendBtn.hidden = running;
+  el.chatStopBtn.hidden = !running;
+}
+
+el.chatStopBtn.addEventListener('click', () => chatAbortController?.abort());
+
 el.stopBtn.addEventListener('click', () => {
-  agentRun?.stop();
-  chatAbortController?.abort();
+  // The bar's Stop ends the agent run. A chat answer streaming alongside it
+  // has its own Stop in the composer, so it is left alone.
+  if (agentRun) agentRun.stop();
+  else chatAbortController?.abort();
   setActingBar(false);
 });
 

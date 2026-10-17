@@ -6,73 +6,11 @@
 <title>Lexi Settings</title>
 <!-- Reuse the shared design-token stylesheet from the side panel (per SPEC:
      "Loads options.js (module) + reuses sidepanel.css tokens (link both)").
-     The page-specific layout below only relies on the --lexi-* custom
-     properties documented in src/config.js CSS_TOKENS, and also defines a
-     matching fallback set so this page still renders correctly even if
-     sidepanel.css hasn't loaded (e.g. loaded standalone during dev). -->
+     sidepanel.css is the single source of the --lexi-* custom properties
+     (documented in src/config.js CSS_TOKENS); the layout below only uses
+     them. -->
 <link rel="stylesheet" href="../sidepanel/sidepanel.css" />
 <style>
-  /* ---------------------------------------------------------------------
-     Fallback design tokens (must match sidepanel.css / SPEC design_notes
-     exactly). If sidepanel.css also defines these, values are identical so
-     load order never causes a visual mismatch.
-  --------------------------------------------------------------------- */
-  :root {
-    --lexi-bg: #ffffff;
-    --lexi-surface: #f8fafc;
-    --lexi-text: #0f172a;
-    --lexi-muted: #64748b;
-    --lexi-border: #e2e8f0;
-    --lexi-accent: #045b6c;
-    --lexi-accent-strong: #034552;
-    --lexi-accent-tint: #b2dfe5;
-    --lexi-risk: #dc2626;
-    --lexi-warn: #f59e0b;
-    --lexi-ok: #16a34a;
-    --lexi-r: 10px;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --lexi-bg: #0e1522;
-      --lexi-surface: #232e40;
-      --lexi-text: #f1f5f9;
-      --lexi-muted: #94a3b8;
-      --lexi-border: #2e3a4d;
-      --lexi-accent: #24cda5;
-      --lexi-accent-strong: #1aab88;
-      --lexi-accent-tint: rgba(36, 205, 165, 0.16);
-      --lexi-risk: #dc2626;
-      --lexi-warn: #f59e0b;
-      --lexi-ok: #16a34a;
-    }
-  }
-
-  /* A viewer's explicit theme toggle always wins over the OS preference. */
-  :root[data-theme='light'] {
-    --lexi-bg: #ffffff;
-    --lexi-surface: #f8fafc;
-    --lexi-text: #0f172a;
-    --lexi-muted: #64748b;
-    --lexi-border: #e2e8f0;
-    --lexi-accent: #045b6c;
-    --lexi-accent-strong: #034552;
-    --lexi-accent-tint: #b2dfe5;
-    --lexi-risk: #dc2626;
-    --lexi-warn: #f59e0b;
-    --lexi-ok: #16a34a;
-  }
-  :root[data-theme='dark'] {
-    --lexi-bg: #0e1522;
-    --lexi-surface: #232e40;
-    --lexi-text: #f1f5f9;
-    --lexi-muted: #94a3b8;
-    --lexi-border: #2e3a4d;
-    --lexi-accent: #24cda5;
-    --lexi-accent-strong: #1aab88;
-    --lexi-accent-tint: rgba(36, 205, 165, 0.16);
-  }
-
   * {
     box-sizing: border-box;
   }
@@ -86,10 +24,13 @@
   body {
     background: var(--lexi-bg);
     color: var(--lexi-text);
-    font-family: -apple-system, 'Segoe UI', Roboto, Inter, sans-serif;
+    font-family: var(--lexi-font);
     font-size: 14px;
     line-height: 1.5;
     min-height: 100vh;
+    /* sidepanel.css caps the panel body at 480px; this page centres its own
+       column instead. */
+    max-width: none;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -117,16 +58,8 @@
     gap: 10px;
   }
 
-  .brand-mark {
+  .brand-lockup {
     display: block;
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
-  }
-
-  .wordmark {
-    font-size: 20px;
-    font-weight: 600;
     color: var(--lexi-text);
   }
 
@@ -180,11 +113,15 @@
   }
 
   .warn-text {
-    color: var(--lexi-warn);
+    color: var(--lexi-warn-text);
   }
 
   a {
-    color: var(--lexi-accent);
+    color: var(--lexi-link);
+  }
+
+  a:hover {
+    color: var(--lexi-link-hover);
   }
 
   #settings.is-hidden {
@@ -212,18 +149,18 @@
   }
 
   .btn {
-    border: none;
-    border-radius: var(--lexi-r);
+    border: 1px solid transparent;
+    border-radius: var(--lexi-r-sm);
     padding: 9px 14px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition: transform 120ms ease, background 120ms ease, opacity 120ms ease;
+    transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background 120ms ease, opacity 120ms ease;
   }
 
-  .btn:hover {
-    transform: translateY(-1px);
+  .btn:active:not(:disabled) {
+    transform: scale(0.97);
   }
 
   .btn:disabled {
@@ -234,7 +171,7 @@
 
   .btn-accent {
     background: var(--lexi-accent);
-    color: #ffffff;
+    color: var(--lexi-on-accent);
   }
 
   .btn-accent:hover:not(:disabled) {
@@ -242,14 +179,13 @@
   }
 
   .btn-muted {
-    background: transparent;
-    color: var(--lexi-muted);
-    border: 1px solid var(--lexi-border);
+    background: var(--lexi-surface);
+    color: var(--lexi-text);
+    border-color: var(--lexi-field-border);
   }
 
   .btn-muted:hover:not(:disabled) {
-    color: var(--lexi-text);
-    border-color: var(--lexi-muted);
+    background: var(--lexi-hover);
   }
 
   .btn-small {
@@ -268,9 +204,9 @@
     flex: 0 0 auto;
     min-width: 220px;
     padding: 7px 9px;
-    border-radius: var(--lexi-r);
-    border: 1px solid var(--lexi-border);
-    background: var(--lexi-bg);
+    border-radius: var(--lexi-r-sm);
+    border: 1px solid var(--lexi-field-border);
+    background: var(--lexi-surface);
     color: var(--lexi-text);
     font-size: 13px;
   }
@@ -296,13 +232,13 @@
     align-items: flex-start;
     gap: 10px;
     padding: 8px 10px;
-    border-radius: var(--lexi-r);
+    border-radius: var(--lexi-r-sm);
     border: 1px solid transparent;
     cursor: pointer;
   }
 
   .radio-row:hover {
-    background: var(--lexi-accent-tint);
+    background: var(--lexi-hover);
   }
 
   .radio-row input[type='radio'] {
@@ -413,8 +349,7 @@
 <div class="page">
   <header class="topbar">
     <div class="brand">
-      <img class="brand-mark" src="../../icons/icon128.png" width="28" height="28" alt="" aria-hidden="true" />
-      <span class="wordmark">Lexi</span>
+      <svg class="brand-lockup" viewBox="0 0 232.53 74.44" width="75" height="24" fill="currentColor" role="img" aria-label="Lexi"><path d="M122.38,64.56H84.8v-.93l5.57-4.48V17.39L84.8,12.9V12h18.09v.93l-5.56,4.49v41h18.48l5.64-8h.93Z" /><path d="M163.56,45.15v1.78h-30.7a12.92,12.92,0,0,0,13.22,12.76c6.88,0,10.52-2.71,12.84-5.57l.92.15v7.35a24.8,24.8,0,0,1-14.15,4.1,20.2,20.2,0,0,1-19.87-20.49c0-11.6,9-20.5,19.64-20.5S163.56,33.55,163.56,45.15Zm-30.7-3.64h23.66a10.66,10.66,0,0,0-11.06-10.36C138.19,31.15,132.86,36.87,132.86,41.51Z" /><path d="M211.46,64.56H193.29v-.93l4.4-3.79L189,49.56l-8.5,10.28,4.33,3.79v.93H168v-.93l5-4.1,12.37-14.3L173.34,30.92l-6-4.1v-.93h18.87v.93l-4.64,3.79L190,40.74l8.12-10.13-4.25-3.79v-.93h16.86v.93l-5.57,4.1L193.36,44.84l12.07,14.69,6,4.1Z" /><path d="M232.53,63.63v.93H214.74v-.93l5.57-4.48V31.93l-5.57-4.57v-.85L227,24.73V59.15ZM218.3,12A4.87,4.87,0,1,1,228,12a4.87,4.87,0,0,1-9.74,0Z" /><path d="M63.83,52.08,38.1,37.22l20-11.54-2.16,8.07a2.74,2.74,0,1,0,5.3,1.42L65.11,20.7a2.74,2.74,0,0,0-4-3.09L35.35,32.46V9.38l5.91,5.91a2.75,2.75,0,1,0,3.88-3.89L34.55.8a2.75,2.75,0,0,0-4.69,2V32.46l-20-11.54,8.07-2.16a2.75,2.75,0,1,0-1.42-5.31L2,17.33a2.74,2.74,0,0,0-.67,5L27.11,37.22l-20,11.54,2.16-8.07A2.75,2.75,0,0,0,4,39.27L.09,53.75a2.77,2.77,0,0,0,1,2.89,2.84,2.84,0,0,0,1.68.57,2.82,2.82,0,0,0,1.37-.37L29.86,42V65.06L24,59.16A2.75,2.75,0,1,0,20.06,63l10.6,10.6a2.77,2.77,0,0,0,1.94.8,2.76,2.76,0,0,0,2.75-2.74V42l20,11.54-8.07,2.16a2.75,2.75,0,0,0,.71,5.4,2.82,2.82,0,0,0,.71-.09l14.48-3.88a2.75,2.75,0,0,0,.66-5Z" /></svg>
     </div>
     <p class="tagline">Settings &amp; onboarding</p>
   </header>

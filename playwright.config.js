@@ -10,7 +10,8 @@
 // same reason. The runtime channel-switch suite (server-flippable
 // prod/staging resolution via GET /api/extension/runtime-config) lives in
 // test/channel-config.spec.js and is opt-in behind LEXI_CHANNEL for the same
-// reason.
+// reason. The Agent Mode activity-timeline suite (mock model, loopback
+// fixture) lives in test/agent-activity.spec.js behind LEXI_AGENT_ACTIVITY.
 //
 // Discovery is switched by testMatch rather than testDir so all spec files can
 // live side-by-side in test/ without one leaking into another's run.
@@ -19,10 +20,13 @@
 const isLite = !!process.env.LEXI_LITE;
 const isAccountMode = !!process.env.LEXI_ACCOUNT_MODE;
 const isChannel = !!process.env.LEXI_CHANNEL;
+const isAgentActivity = !!process.env.LEXI_AGENT_ACTIVITY;
 
 module.exports = {
   testDir: './test',
-  testMatch: isChannel
+  testMatch: isAgentActivity
+    ? /agent-activity\.spec\.js$/
+    : isChannel
     ? /channel-config\.spec\.js$/
     : isAccountMode
       ? /account-mode\.spec\.js$/

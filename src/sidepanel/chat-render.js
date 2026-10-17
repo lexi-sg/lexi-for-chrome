@@ -342,7 +342,7 @@ function prettyToolName(name) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function renderTokensSavedSlot(root, count) {
+export function renderTokensSavedSlot(root, count) {
   let slot = root.querySelector('.lexi-tokens-saved');
   if (!slot) {
     slot = document.createElement('div');
@@ -363,7 +363,7 @@ function renderTokensSavedSlot(root, count) {
  * @param {HTMLElement} container
  * @param {string} raw
  */
-function renderMarkdown(container, raw) {
+export function renderMarkdown(container, raw) {
   container.textContent = '';
   const blocks = splitBlocks(raw);
   for (const block of blocks) {
@@ -374,7 +374,7 @@ function renderMarkdown(container, raw) {
 
 /**
  * Splits raw text into block-level chunks: fenced code blocks, tables,
- * lists, and paragraphs (split on blank lines).
+ * quotes, lists, and paragraphs (split on blank lines).
  * @param {string} raw
  * @returns {Array<{type: string, lines: string[]}>}
  */
@@ -406,6 +406,16 @@ function splitBlocks(raw) {
         i++;
       }
       blocks.push({ type: 'table', lines: tableLines });
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const quoteLines = [];
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        quoteLines.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      blocks.push({ type: 'quote', lines: quoteLines });
       continue;
     }
 
@@ -445,6 +455,7 @@ function splitBlocks(raw) {
 function isBlockStart(line) {
   return (
     /^\s*```/.test(line) ||
+    /^\s*>/.test(line) ||
     /^\s*#{1,3}\s+/.test(line) ||
     /^\s*([-*]|\d+\.)\s+/.test(line) ||
     /^\s*\|.*\|\s*$/.test(line)
@@ -465,6 +476,8 @@ function renderBlock(block) {
       return renderCodeBlock(block.lines);
     case 'table':
       return renderTable(block.lines);
+    case 'quote':
+      return renderQuote(block.lines);
     case 'list':
       return renderList(block.lines);
     case 'heading':
@@ -482,6 +495,13 @@ function renderCodeBlock(lines) {
   code.textContent = lines.join('\n');
   pre.appendChild(code);
   return pre;
+}
+
+/** A "> " quote; its inside is markdown too (paragraphs, lists, nesting). */
+function renderQuote(lines) {
+  const quote = document.createElement('blockquote');
+  renderMarkdown(quote, lines.join('\n'));
+  return quote;
 }
 
 function renderHeading(line) {
@@ -588,9 +608,22 @@ function renderTable(lines) {
   return wrap;
 }
 
-// Inline-level tokens: **bold**, *italic*, `code`, [text](url). Applied left
-// to right over the text, appending real DOM nodes (never innerHTML).
-const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/;
+// Inline-level tokens: **bold**, *italic* or _italic_, `code`, [text](url).
+// Applied left to right over the text, appending real DOM nodes (never
+// innerHTML). Bold may hold italics and italics may hold bold — legal answers
+// often bold a citation whose case name is italic: ***Vishaka v. State*, (1997)
+// 6 SCC 241**. An _underscore_ italic needs a non-word character on each side,
+// so snake_case names and URLs stay as they are.
+const BOLD = String.raw`\*\*(?:[^*]|\*[^*]+\*)+\*\*`;
+const CODE = '`[^`]+`';
+const LINK = String.raw`\[[^\]]+\]\([^)]+\)`;
+const ITALIC = String.raw`\*(?:[^*]|\*\*[^*]+\*\*)+\*|(?<!\w)_[^_\n]+_(?!\w)`;
+const INLINE_RE = new RegExp(`(${BOLD}|${CODE}|${LINK}|${ITALIC})`);
+const whole = (src) => new RegExp(`^(?:${src})$`);
+const IS_BOLD = whole(BOLD);
+const IS_CODE = whole(CODE);
+const IS_ITALIC = whole(ITALIC);
+const LINK_PARTS = /^\[([^\]]+)\]\(([^)]+)\)$/;
 
 /**
  * Appends the inline-formatted rendering of `text` as child nodes of `el`.
@@ -599,24 +632,29 @@ const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\*[^*]+\*)/;
  */
 function appendInline(el, text) {
   const parts = String(text ?? '').split(INLINE_RE);
-  for (const part of parts) {
-    if (!part) continue;
-
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-      const strong = document.createElement('strong');
-      strong.textContent = part.slice(2, -2);
-      el.appendChild(strong);
-      continue;
+  parts.forEach((part, index) => {
+    if (!part) return;
+    // split() puts the matched tokens at odd indexes, plain text between.
+    if (index % 2 === 0) {
+      el.appendChild(document.createTextNode(part));
+      return;
     }
 
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+    if (IS_BOLD.test(part)) {
+      const strong = document.createElement('strong');
+      appendInline(strong, part.slice(2, -2));
+      el.appendChild(strong);
+      return;
+    }
+
+    if (IS_CODE.test(part)) {
       const code = document.createElement('code');
       code.textContent = part.slice(1, -1);
       el.appendChild(code);
-      continue;
+      return;
     }
 
-    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    const linkMatch = LINK_PARTS.exec(part);
     if (linkMatch) {
       const a = document.createElement('a');
       a.textContent = linkMatch[1];
@@ -628,16 +666,16 @@ function appendInline(el, text) {
         a.rel = 'noopener noreferrer';
       }
       el.appendChild(a);
-      continue;
+      return;
     }
 
-    if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+    if (IS_ITALIC.test(part)) {
       const em = document.createElement('em');
-      em.textContent = part.slice(1, -1);
+      appendInline(em, part.slice(1, -1));
       el.appendChild(em);
-      continue;
+      return;
     }
 
     el.appendChild(document.createTextNode(part));
-  }
+  });
 }

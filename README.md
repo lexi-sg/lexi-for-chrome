@@ -63,10 +63,8 @@ _(Coming soon — pending review. Until then, use Load unpacked below.)_
 5. Pin the Lexi icon to your toolbar, click it (or use the side panel picker)
    to open the panel — you'll land on onboarding with a single **Sign in
    with Lexi** button.
-6. See the [Icons](#icons) note below — the extension expects
-   `icons/icon16.png`, `icon32.png`, `icon48.png`, `icon128.png` to exist at
-   the repo root; generate them once with the snippet there if they're
-   missing.
+6. The toolbar icons are checked in under `icons/`; see [Icons](#icons) to
+   regenerate them from the web app's.
 
 No build step. No bundler. No `npm install` required to run the extension
 itself — everything is vanilla ES modules loaded directly by the browser.
@@ -209,8 +207,9 @@ attach (e.g. DevTools is already open on that tab), Lexi degrades to a
 synthetic-DOM-event compatibility fallback and says so in the acting bar.
 While active:
 
-- A persistent red "Lexi is acting — `<intent>`" bar with a **Stop** button
-  sits above the composer, with a control-mode badge ("Controlling tab" =
+- A red "Lexi is acting — `<intent>`" bar with a **Stop** button sits above
+  the composer for the whole run, including while the model works out its
+  next step ("Thinking…"), with a control-mode badge ("Controlling tab" =
   trusted CDP input; "Compatibility mode" = synthetic fallback);
   `overlay.js` paints a pulsing red border on the page itself, and Chrome's
   own unsuppressable "started debugging this browser" infobar is present —
@@ -344,49 +343,18 @@ to open the panel" gesture — that's a one-time manual smoke test.
 
 ## Icons
 
-`manifest.json` references `icons/icon16.png`, `icon32.png`, `icon48.png`,
-and `icon128.png` at the repo root. These are binary assets that can't be
-authored as code, so they aren't checked in by the automated build — you (or
-a design pass) need to generate them once before `chrome://extensions` will
-load the icon (the extension still loads and runs without them; Chrome just
-shows a placeholder puzzle-piece icon).
-
-**Intent:** a Lexi violet/indigo (`#5B5BD6` → `#4A3AFF`) rounded-square
-background with a simple white "L" monogram (or a minimal scales-of-justice
-glyph), transparent corners, at 16/32/48/128px.
-
-**Quick placeholder-generation snippet** (no extra dependencies — uses an
-SVG you can rasterize with any tool you have on hand; example below uses
-Chrome itself, headless, via a one-off Node script with no npm installs):
+`icons/icon16.png` … `icon128.png` are the Lexi web app's own app icons (the
+black Lexi mark on a `#FAFAFA` rounded tile, as app.getlexi.io uses). Regenerate
+them from lexi-frontend with:
 
 ```bash
-mkdir -p icons
-cat > /tmp/lexi-icon.svg <<'EOF'
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#5B5BD6"/>
-      <stop offset="100%" stop-color="#4A3AFF"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#g)"/>
-  <text x="64" y="90" font-family="-apple-system,Segoe UI,Roboto,sans-serif"
-        font-size="72" font-weight="700" fill="#FFFFFF"
-        text-anchor="middle">L</text>
-</svg>
-EOF
-# Rasterize at each size with any SVG renderer you have available, e.g.:
-#   macOS:   qlmanage -t -s 128 -o icons /tmp/lexi-icon.svg   (then resize down)
-#   ImageMagick: magick /tmp/lexi-icon.svg -resize 128x128 icons/icon128.png
-#                magick /tmp/lexi-icon.svg -resize 48x48   icons/icon48.png
-#                magick /tmp/lexi-icon.svg -resize 32x32   icons/icon32.png
-#                magick /tmp/lexi-icon.svg -resize 16x16   icons/icon16.png
-#   Or drop the SVG into any online SVG→PNG converter and export all 4 sizes.
+../lexi-backend/venv/bin/python scripts/make-icons.py ~/lexi/lexi-frontend/public/icons
 ```
 
-Any equivalent violet monogram works — this is intentionally low-ceremony
-since it's a one-time asset, not something the extension generates at
-runtime.
+16 and 32 copy the web app's favicons; 48 and 128 are scaled from its
+512px icon. The panel and settings page draw the logo inline (the web app's
+`BrandLockup` SVG, in `currentColor`), and `icons/lexi-mark.svg` is the mark
+alone, used as a mask for the teal accent mark in the empty chat.
 
 ---
 

@@ -285,32 +285,67 @@ export const DENYLIST = [
 // Defined concretely (with light + dark values) in sidepanel.css; this is a
 // documentation-only contract listing the token names for other files.
 //
-//   --lexi-bg              page/panel background
-//   --lexi-surface         raised surface (cards, chips, header)
+//   --lexi-bg              page/panel background (web app bg_color.page)
+//   --lexi-surface         cards, composer, chips, menus (white)
+//   --lexi-hover           hovered rows and ghost buttons
 //   --lexi-text            primary text color
+//   --lexi-prose           assistant answer body text
 //   --lexi-muted           secondary/meta text color
-//   --lexi-border          hairline border color
-//   --lexi-accent          brand teal accent (#045b6c light / #24cda5 dark)
-//   --lexi-accent-strong   stronger accent (hover/active states)
-//   --lexi-accent-tint     faint accent background tint (hover/selected)
+//   --lexi-placeholder     input placeholder text
+//   --lexi-border          hairline divider color
+//   --lexi-field-border    composer / chip / outline-button border (+ -hover)
+//   --lexi-chip-text       suggestion-chip text
+//   --lexi-accent          primary action fill (#0f172a light / #f1f5f9 dark)
+//   --lexi-accent-strong   primary action hover
+//   --lexi-accent-tint     faint selected/hover tint
+//   --lexi-on-accent       text and icons on an accent fill
+//   --lexi-link            links in answers (+ -hover)
+//   --lexi-brand-mark      the teal accent mark (#045b6c; white in dark)
 //   --lexi-user-bubble     flat neutral user-message surface (app messagebox)
 //   --lexi-risk            severity: HIGH / danger / stop
-//   --lexi-warn            severity: MED / caution
+//   --lexi-warn            severity: MED / caution (+ -bg, -border, -text)
 //   --lexi-ok              severity: LOW / success
-//   --lexi-r               base border radius (10px)
+//   --lexi-r               card/menu radius (12px); --lexi-r-sm buttons (8px)
+//   --lexi-step-*          agent activity timeline greys, after the web app's
+//                          (icon, meta, text, label, line, chip-border,
+//                          chip-hover, head, head-hover, error)
 // ---------------------------------------------------------------------------
 export const CSS_TOKENS = [
   '--lexi-bg',
   '--lexi-surface',
+  '--lexi-hover',
   '--lexi-text',
+  '--lexi-prose',
   '--lexi-muted',
+  '--lexi-placeholder',
   '--lexi-border',
+  '--lexi-field-border',
+  '--lexi-field-border-hover',
+  '--lexi-chip-text',
   '--lexi-accent',
   '--lexi-accent-strong',
   '--lexi-accent-tint',
+  '--lexi-on-accent',
+  '--lexi-link',
+  '--lexi-link-hover',
+  '--lexi-brand-mark',
   '--lexi-user-bubble',
   '--lexi-risk',
   '--lexi-warn',
+  '--lexi-warn-bg',
+  '--lexi-warn-border',
+  '--lexi-warn-text',
   '--lexi-ok',
   '--lexi-r',
+  '--lexi-r-sm',
+  '--lexi-step-icon',
+  '--lexi-step-meta',
+  '--lexi-step-text',
+  '--lexi-step-label',
+  '--lexi-step-line',
+  '--lexi-step-chip-border',
+  '--lexi-step-chip-hover',
+  '--lexi-step-head',
+  '--lexi-step-head-hover',
+  '--lexi-step-error',
 ];
