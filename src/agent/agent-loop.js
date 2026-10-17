@@ -30,7 +30,12 @@ const MAX_INPUT_CHARS = LIMITS.MAX_TOKENS_INPUT_CHARS || 180000 * 4;
  *   {type:'text', delta}                          - streamed answer text
  *   {type:'status', status, ...}                   - status in
  *        'acting' | 'thinking' | 'awaiting_confirm' | 'done' | 'error'
- *   {type:'tool_intent', name, id, input?}         - drives the acting bar
+ *   {type:'tool_intent', name, id, input?, target?} - a tool call the model is
+ *        making; drives the acting bar and the panel's activity timeline.
+ *        `target` is the accessible name of the element `input.ref` points at
+ *   {type:'tool_result', id, name, ok, denied, error} - that call finished
+ *   {type:'thinking', text}                         - thinking text the model
+ *        returned with a step (only models that think send any)
  *   {type:'confirm', toolUseId, name, input, actionClass, origin, reason}
  *        - a risky action needs approval; call resolveConfirm() with the result
  *   {type:'ask_user', toolUseId, question}         - the model asked a
@@ -434,7 +439,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
               if (buf) {
                 buf.input = evt.input;
                 buf.parseError = evt.parseError || null;
-                emit({ type: 'tool_intent', name: buf.name, id: evt.id, input: evt.input });
+                emit({ type: 'tool_intent', name: buf.name, id: evt.id, input: evt.input, target: elementName(evt.input) });
               }
             }
             break;
@@ -443,6 +448,7 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
             // when this assistant turn is pushed into run.messages (required by
             // Anthropic's thinking-replay contract for thinking-enabled models).
             thinkingBlocks.push(evt.block);
+            if (evt.block && evt.block.thinking) emit({ type: 'thinking', text: evt.block.thinking });
             break;
           case 'stop':
             stopReason = evt.stopReason;
@@ -557,7 +563,9 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
     const results = [];
     for (const toolUse of toolUses) {
       if (run.stopped) break;
-      results.push(await executeTool(toolUse));
+      const result = await executeTool(toolUse);
+      results.push(result);
+      emit(describeResult(toolUse, result));
     }
     if (run.stopped) return;
 
@@ -578,6 +586,27 @@ export function createAgentRun({ port, tabId, task, model, approvalMode, auth, a
     } else if (anySuccess) {
       run.consecutiveFailures = 0;
     }
+  }
+
+  /** The panel's view of a finished tool call (never the page content itself). */
+  function describeResult(toolUse, result) {
+    const text = typeof result.content === 'string' ? result.content : '';
+    return {
+      type: 'tool_result',
+      id: toolUse.id,
+      name: toolUse.name,
+      ok: !result.is_error,
+      denied: !!result.is_error && text.startsWith('User denied this action.'),
+      error: result.is_error ? text : null,
+    };
+  }
+
+  /** Accessible name of the indexed element a tool input's ref points at. */
+  function elementName(input) {
+    const ref = input && input.ref;
+    if (!ref) return null;
+    const match = (run.lastElements || []).find((e) => e && e.ref === ref);
+    return (match && match.name) || null;
   }
 
   async function executeTool(toolUse) {

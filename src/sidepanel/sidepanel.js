@@ -38,6 +38,7 @@ import {
 import { QUICK_ACTIONS, SECONDARY } from '../prompts/quick-action-templates.js';
 import { isAgentEnabled } from '../background/permission-manager.js';
 import { createRenderer } from './chat-render.js';
+import { createAgentActivity } from './agent-activity.js';
 import { streamProductChat } from './product-chat-client.js';
 
 // ---------------------------------------------------------------------------
@@ -138,7 +139,8 @@ let productConversationId = 0;
 
 /** Agent-mode run handle from createAgentRun(). */
 let agentRun = null;
-let agentAssistantHandle = null;
+/** The run's timeline in the message log (agent-activity.js). */
+let agentActivity = null;
 /** toolUseId of an in-flight ask_user the agent is parked on, if any. */
 let pendingAgentAsk = null;
 /** Quick action awaiting the user's question in the composer ("Screenshot &
@@ -1320,7 +1322,7 @@ async function handleAgentSend(task) {
   }
 
   renderer.appendUser(task);
-  agentAssistantHandle = null;
+  agentActivity = createAgentActivity(el.messages);
   setActingControl(null); // reset; the SW reports trusted/fallback on AGENT_ACTING
   setActingBar(true, 'Lexi is starting…');
 
@@ -1341,25 +1343,35 @@ function handleAgentEvent(event) {
 
   switch (event.type) {
     case 'text':
-      if (!agentAssistantHandle) agentAssistantHandle = renderer.startAssistant();
-      agentAssistantHandle.pushDelta(event.delta);
+      activity().text(event.delta);
       break;
 
-    // agent-loop.js emits 'tool_intent' (underscore) with {name, id, input?}.
+    case 'thinking':
+      activity().thought(event.text);
+      break;
+
+    // agent-loop.js emits 'tool_intent' (underscore) with {name, id, input?, target?}.
     case 'tool_intent':
       setActingBar(true, intentTextFor(event));
+      activity().toolIntent(event);
+      break;
+
+    case 'tool_result':
+      activity().toolResult(event);
       break;
 
     case 'status':
+      if ((event.status || event.state) === 'thinking') activity().thinking();
       applyAgentStatus(event);
       break;
 
     // agent-loop.js emits {type:'tokensSaved', tokens, total}.
     case 'tokensSaved':
-      agentAssistantHandle?.addTokensSaved(event.tokens || 0);
+      activity().addTokensSaved(event.tokens || 0);
       break;
 
     case 'confirm':
+      activity().toolWaiting(event.toolUseId, 'Waiting for your approval…');
       renderConfirmCard(event);
       break;
 
@@ -1374,6 +1386,12 @@ function handleAgentEvent(event) {
     default:
       break;
   }
+}
+
+/** The current run's timeline; events that outlive their run start a new one. */
+function activity() {
+  if (!agentActivity) agentActivity = createAgentActivity(el.messages);
+  return agentActivity;
 }
 
 /** Human-readable acting-bar text for a tool_intent event from agent-loop. */
@@ -1406,9 +1424,9 @@ function applyAgentStatus(event) {
 }
 
 function finishAgentRun(status, event) {
-  if (agentAssistantHandle) {
-    agentAssistantHandle.finalize();
-    agentAssistantHandle = null;
+  if (agentActivity) {
+    agentActivity.finish(status, { injectionFlagged: !!(event && event.injectionFlagged) });
+    agentActivity = null;
   }
   if (status === 'error') {
     // agent-loop.js emits errors as {status:'error', error:{type, message}}.

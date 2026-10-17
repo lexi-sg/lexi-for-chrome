@@ -1268,6 +1268,299 @@ body {
   padding: 12px 24px 32px;
 }
 
+/* ========================= AGENT ACTIVITY TIMELINE ======================== */
+/* An Agent Mode run, laid out like the Lexi web app's SegmentTimeline: a
+   collapsible group per run of steps, each step a row whose icon sits on a
+   dashed rail. The rail geometry (top 26px / bottom -18px) assumes 20px icons
+   and the 20px gap between rows; change one and recompute the others. */
+
+.lexi-agent-msg {
+  display: flex;
+  flex-direction: column;
+}
+
+.lexi-seg {
+  margin-top: 12px;
+}
+
+.lexi-seg:first-child {
+  margin-top: 0;
+}
+
+.lexi-seg-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: none;
+  text-align: left;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: 0.035px;
+  color: var(--lexi-step-head);
+  transition: color 120ms ease;
+}
+
+.lexi-seg-head:hover,
+.lexi-seg-head:focus-visible {
+  color: var(--lexi-step-head-hover);
+  outline: none;
+}
+
+.lexi-seg-title {
+  display: inline-block;
+  min-width: 0;
+}
+
+.lexi-seg-title::first-letter {
+  text-transform: uppercase;
+}
+
+.lexi-seg-chevron {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  transition: transform 150ms ease;
+}
+
+.lexi-seg-open .lexi-seg-chevron {
+  transform: rotate(180deg);
+}
+
+.lexi-seg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin: 6px 0 0 4px;
+  padding: 6px 4px 0;
+}
+
+.lexi-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.lexi-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 26px;
+  bottom: -18px;
+  transform: translateX(-50%);
+  border-left: 1px dashed var(--lexi-step-line);
+  pointer-events: none;
+}
+
+.lexi-step-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: var(--lexi-step-icon);
+}
+
+.lexi-icon-clock {
+  margin-top: 3px;
+}
+
+.lexi-step-end .lexi-step-icon {
+  margin-top: 2px;
+}
+
+.lexi-step[data-status="running"] > .lexi-step-icon {
+  animation: lexi-fade-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.lexi-step[data-status="error"] > .lexi-step-icon {
+  color: var(--lexi-step-error);
+}
+
+.lexi-step-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lexi-step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lexi-step-label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--lexi-step-label);
+}
+
+.lexi-step[data-status="error"] .lexi-step-label,
+.lexi-step[data-status="denied"] .lexi-step-label,
+.lexi-step[data-status="stopped"] .lexi-step-label {
+  color: var(--lexi-step-meta);
+}
+
+.lexi-step-spinner,
+.lexi-step-check {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  color: var(--lexi-step-text);
+}
+
+.lexi-step-spinner {
+  animation: lexi-spin 1s linear infinite;
+}
+
+.lexi-step-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lexi-step-line);
+}
+
+.lexi-step-badge {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--lexi-step-meta);
+}
+
+.lexi-step-detail,
+.lexi-step-progress,
+.lexi-thinking-wait {
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--lexi-step-meta);
+  overflow-wrap: anywhere;
+}
+
+.lexi-step-detail {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lexi-step-progress,
+.lexi-thinking-wait {
+  animation: lexi-fade-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.lexi-step-result {
+  margin-top: 2px;
+}
+
+.lexi-step-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--lexi-step-chip-border);
+  border-radius: 4px;
+  background: none;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--lexi-step-text);
+  transition: background-color 120ms ease;
+}
+
+.lexi-step-chip:hover {
+  background: var(--lexi-step-chip-hover);
+}
+
+.lexi-step-chip-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.lexi-step-result-text {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--lexi-step-meta);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lexi-step-end-text {
+  font-size: 14px;
+  line-height: 1.625;
+  color: var(--lexi-step-meta);
+}
+
+/* Thinking text: muted, clamped to six lines with a fade until expanded. */
+.lexi-agent-msg .lexi-thought-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.625;
+  color: var(--lexi-step-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: calc(13px * 1.625 * 6);
+  overflow: hidden;
+}
+
+.lexi-thought-clamped .lexi-thought-text {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+
+.lexi-thought-expanded .lexi-thought-text {
+  max-height: none;
+}
+
+.lexi-thought-more {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--lexi-step-meta);
+}
+
+.lexi-thought-more:hover {
+  color: var(--lexi-step-text);
+}
+
+/* Text between groups is narration (muted); the text after the last group is
+   the answer. */
+.lexi-agent-text {
+  margin: 16px 0;
+}
+
+.lexi-agent-text:first-child {
+  margin-top: 0;
+}
+
+.lexi-agent-text:last-child {
+  margin-bottom: 0;
+}
+
+.lexi-agent-narration {
+  color: var(--lexi-step-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lexi-step[data-status="running"] > .lexi-step-icon,
+  .lexi-step-spinner,
+  .lexi-step-progress,
+  .lexi-thinking-wait {
+    animation: none;
+  }
+}
+
 /* ================================ ANIMATIONS ================================ */
 
 @keyframes lexi-fade-in {
@@ -1288,6 +1581,19 @@ body {
   }
   50% {
     opacity: 0.15;
+  }
+}
+
+/* The web app's animate-pulse and animate-spin. */
+@keyframes lexi-fade-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes lexi-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

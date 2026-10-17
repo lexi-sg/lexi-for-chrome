@@ -342,7 +342,7 @@ function prettyToolName(name) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function renderTokensSavedSlot(root, count) {
+export function renderTokensSavedSlot(root, count) {
   let slot = root.querySelector('.lexi-tokens-saved');
   if (!slot) {
     slot = document.createElement('div');
@@ -363,7 +363,7 @@ function renderTokensSavedSlot(root, count) {
  * @param {HTMLElement} container
  * @param {string} raw
  */
-function renderMarkdown(container, raw) {
+export function renderMarkdown(container, raw) {
   container.textContent = '';
   const blocks = splitBlocks(raw);
   for (const block of blocks) {
