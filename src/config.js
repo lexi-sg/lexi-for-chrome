@@ -74,6 +74,10 @@ export const MSG = {
   CS_REF_INFO: 'CS_REF_INFO',
   CS_SYNTHETIC_ACTION: 'CS_SYNTHETIC_ACTION',
   CS_ACTION_RESULT: 'CS_ACTION_RESULT',
+  CS_FIND_TEXT: 'CS_FIND_TEXT',
+  CS_TEXT_FOUND: 'CS_TEXT_FOUND',
+  CS_FIELD_INFO: 'CS_FIELD_INFO',
+  CS_FIELD: 'CS_FIELD',
 };
 
 // Name of the long-lived Port the side panel opens against the SW.
@@ -216,6 +220,9 @@ export const LIMITS = {
   MAX_FAILURES: 3, // consecutive tool failures before aborting the run
   HEARTBEAT_MS: 25000, // Panel -> SW heartbeat interval
   MAX_TOKENS_STEP: 4096, // max_tokens per Anthropic Messages call
+  WAIT_DEFAULT_MS: 10000, // wait_for timeout when the model gives none
+  WAIT_MAX_MS: 20000, // wait_for ceiling (EXEC_TOOL's own reply timeout is 30s)
+  NAV_SETTLE_MS: 10000, // navigate/go_back wait at most this long for the load
 };
 
 // ---------------------------------------------------------------------------
@@ -242,6 +249,12 @@ export const STORAGE_KEYS = {
 // in session storage (TRUSTED_CONTEXTS), never in local, so it clears on browser
 // restart and is unreadable by content scripts.
 export const CONNECT_NONCE_KEY = 'lexi_connect_nonce';
+
+// chrome.storage.session key holding each tab's run scope ({[tabId]:
+// {allowedHosts}}) for the agent run on it. Set by AGENT_START from the side
+// panel's Port only, cleared on AGENT_STOP; session storage, so it never
+// outlives the browser session and content scripts cannot read it.
+export const RUN_SCOPES_KEY = 'lexi_run_scopes';
 
 // ---------------------------------------------------------------------------
 // Static site-policy denylist — hard-blocks Agent Mode entirely (chat/see+

@@ -12,9 +12,10 @@
 /**
  * TOOLS — the full tool surface available to the model in Agent Mode.
  * Each entry is a valid Anthropic `tools[]` item: {name, description, input_schema}.
- * Field names below (ref, mode, fullPage, button, text, submit, keys,
- * direction, url, query, question, answer) are the exact input_schema
- * properties other files (action-executor.js, content scripts) expect.
+ * Field names below (ref, mode, fullPage, button, text, submit, option, keys,
+ * direction, url, query, max_results, selector, url_contains, timeout_ms,
+ * question, answer) are the exact input_schema properties other files
+ * (action-executor.js, content scripts) expect.
  */
 export const TOOLS = [
   {
@@ -82,6 +83,20 @@ export const TOOLS = [
     },
   },
   {
+    name: 'select_option',
+    description:
+      'Choose an option in a native dropdown (<select>, shown as a combobox in read_page) by its visible label or its value. If nothing matches, the result lists the available options. For a custom (non-<select>) dropdown, click it and then click the option instead.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: "The dropdown's ref from read_page's interactive index, e.g. 'e8'." },
+        option: { type: 'string', description: 'The option to pick: its visible label (e.g. "Pune") or its value.' },
+      },
+      required: ['ref', 'option'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'press_key',
     description: "Send a key or key-combo, e.g. 'Enter', 'Tab', 'Escape', 'ctrl+a'.",
     input_schema: {
@@ -142,6 +157,39 @@ export const TOOLS = [
     },
   },
   {
+    name: 'find_text',
+    description:
+      "Search the WHOLE page for a phrase or quote, including the parts read_page cuts from long pages. Matches exactly first, then across two neighbouring paragraphs, then approximately (>= 90% similar); never guesses. Each result gives a short snippet, the nearest heading, the numbered paragraph and page marker in effect (when the page has them, e.g. a judgment's para numbers), and a ref you can scroll to. Use it to locate text, check that something is on the page, or cite where a quote sits. It does not see inside embedded frames or PDF viewers.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The text to find. Quote it as written; "..." marks omitted words. Case, curly quotes, hyphenation and spacing are ignored.',
+        },
+        max_results: { type: 'integer', description: 'Most matches to return (default 5, max 20).' },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'wait_for',
+    description:
+      'Wait until the page shows some text, has an element matching a CSS selector, and/or its URL contains a string (all given conditions must hold). With no condition, waits for the page to finish loading. Use after an action that loads content — search results, the next page, a dropdown that fills in after another one changes — instead of re-reading in a loop. A timeout is reported as matched:false, not an error.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Visible text to wait for (case-insensitive).' },
+        selector: { type: 'string', description: "CSS selector to wait for, e.g. '#results li' or 'select#tehsil option:nth-child(2)'." },
+        url_contains: { type: 'string', description: 'Wait until the tab URL contains this.' },
+        timeout_ms: { type: 'integer', description: 'How long to wait at most (default 10000, max 20000).' },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'ask_user',
     description:
       'Pause and hand control back to the human. REQUIRED for logins, credentials, captchas, payment, or anything ambiguous or risky. Never attempt these yourself.',
@@ -176,7 +224,7 @@ export const TOOLS = [
 export const SEE_ONLY_TOOLS = ['read_page', 'screenshot', 'find_element', 'finish', 'ask_user'];
 
 /** Action classes that never touch chrome.debugger / the DOM. */
-const NON_MUTATING_CLASSES = new Set(['READ', 'SCREENSHOT', 'SCROLL', 'FIND', 'ASK_USER', 'FINISH', 'NAVIGATE_BACK']);
+const NON_MUTATING_CLASSES = new Set(['READ', 'SCREENSHOT', 'SCROLL', 'FIND', 'WAIT', 'ASK_USER', 'FINISH', 'NAVIGATE_BACK']);
 
 // Keyword heuristics used to upgrade a generic click / type_text to a
 // RISKY_CLASSES action based on the target element's accessible name/text
@@ -232,10 +280,22 @@ export function toolActionClass(name, input, currentUrl) {
       if (safeInput.submit) return 'SUBMIT';
       return classifyByKeyword(safeInput.elementName || safeInput.elementText) || 'TYPE';
     }
+    case 'select_option':
+      return classifyByKeyword(safeInput.elementName || safeInput.elementText) || 'SELECT';
+    case 'find_text':
+      return 'READ';
+    case 'wait_for':
+      return 'WAIT';
     case 'press_key':
-      // An Enter/Return keypress typically submits a form — treat it as SUBMIT
-      // (a RISKY_CLASSES action) rather than a benign keypress, matching
-      // permission-manager.classifyAction.
+      // A lone paging key only scrolls; select-all only selects. An Enter/Return keypress typically
+      // submits a form — treat it as SUBMIT (a RISKY_CLASSES action) rather
+      // than a benign keypress, matching permission-manager.classifyAction.
+      if (/^\s*(page\s?up|page\s?down|page_up|page_down|home|end)\s*$/i.test(String(safeInput.keys || ''))) {
+        return 'SCROLL';
+      }
+      if (/^\s*(ctrl|cmd|meta|command|control)\s*\+\s*a\s*$/i.test(String(safeInput.keys || ''))) {
+        return 'SELECT_TEXT';
+      }
       return /\b(enter|return)\b/i.test(String(safeInput.keys || '')) ? 'SUBMIT' : 'KEY_PRESS';
     case 'scroll':
       return 'SCROLL';

@@ -217,7 +217,13 @@ While active:
   three redundant signals that something is happening.
 - Anything in `RISKY_CLASSES` (`SUBMIT`, `NAVIGATE_NEW_DOMAIN`, `PAY`,
   `SEND_MESSAGE`, `UPLOAD`, `DOWNLOAD`, `DELETE`) always pauses for your
-  explicit confirmation, regardless of approval mode.
+  explicit confirmation, regardless of approval mode — except a site's own
+  search (below).
+- Reading and browsing never ask, in any mode: read, find, screenshot,
+  scroll, wait, a site's own search (typing the query and running it, when
+  the form holds nothing but search boxes), following a plain link, another
+  page of the same site, and going back. So a read-only task runs without a
+  prompt. Manual Approve confirms every other action that can change a page.
 - Typing into password or payment fields, account creation, financial
   transactions, and permanent deletion are **hard-blocked** in every mode —
   the model is instructed to call `ask_user` instead.
@@ -227,6 +233,31 @@ While active:
 - Closing the side panel, clicking Stop, or cancelling Chrome's own
   debugger infobar are all equivalent — they immediately stop the loop and
   detach the CDP session.
+- **Sign-in walls and CAPTCHAs are the user's.** When a page shows a
+  blocking sign-in form, a "session expired" notice, or a CAPTCHA
+  (`dom-index.js` `detectSignals`), the loop pauses before the model acts and
+  asks the user to clear it, once per page. One-time-code and CAPTCHA answer
+  fields are treated like password fields: the agent can't type into them.
+- **Run scope (host allowlist).** Whoever starts a run can pass
+  `allowedHosts` to `createAgentRun` (a task type, the web app). The service
+  worker then blocks every action outside those sites, including navigation
+  to them. On the allowed sites it runs click, type, select and search (Enter
+  in a search box) without a prompt, in any approval mode. Pay, delete,
+  upload, download, send and any other submit still confirm. Only the side
+  panel's Port can set a scope (`AGENT_START`). It lives in
+  `chrome.storage.session` and is cleared on `AGENT_STOP`.
+
+Agent Mode tools (`src/agent/tools.js`): `read_page`, `screenshot`, `click`,
+`type_text`, `select_option` (native `<select>` dropdowns, by label or value),
+`press_key`, `scroll`, `navigate` / `go_back` (both wait for the page to
+load), `find_element`, `find_text`, `wait_for`, `ask_user` and `finish`.
+`find_text` (`src/content/find-text.js`) searches the page's *whole* rendered
+text, which `read_page` truncates on long pages. It tries an exact match,
+then a span across two paragraphs, then a fuzzy match at >= 0.90, and never
+guesses. Each match comes back with a short snippet, the nearest heading, the
+numbered paragraph and page marker in effect (when the page has them, e.g. a
+judgment's para numbers), and a ref to scroll to. `wait_for` waits for text, a
+CSS selector and/or a URL fragment.
 
 See `permissions.justifications` for the exact per-permission rationale, and
 [STORE_LISTING.md](./STORE_LISTING.md) for the Chrome Web Store–facing
@@ -264,10 +295,10 @@ something.
 | `foundation` | `manifest.json`, `src/config.js` | Manifest + the `MSG`/`MODELS`/`LIMITS`/`STORAGE_KEYS`/`DENYLIST`/`CSS_TOKENS` single source of truth. |
 | `service-worker` | `src/background/service-worker.js`, `permission-manager.js` | Port registry, message router, site-policy gate, sign-in handoff (`onMessageExternal`). |
 | `cdp-tools` | `src/background/cdp-driver.js`, `action-executor.js` | Chrome DevTools Protocol driver + tool→CDP/fallback mapping with TOCTOU origin re-checks. |
-| `agent-core` | `src/agent/anthropic-client.js`, `agent-loop.js`, `tools.js` | Agent Mode's relay client, the OBSERVE→PLAN→ACT loop, tool schemas. |
+| `agent-core` | `src/agent/anthropic-client.js`, `agent-loop.js`, `tools.js`, `host-scope.js` | Agent Mode's relay client, the OBSERVE→PLAN→ACT loop, tool schemas, and a run's host allowlist helpers (shared with the SW). |
 | `product-chat` | `src/sidepanel/product-chat-client.js` | Chat mode's transport — streams the real `/llm/chat` product pipeline and drives `chat-render.js`. |
 | `providers-nano` | `src/agent/gemini-nano.js` | Optional keyless on-device (Chrome built-in Prompt API) tier. |
-| `content-perception` | `src/content/content-script.js`, `extract-text.js`, `dom-index.js`, `overlay.js` | Classic (non-module) content scripts injected in dependency order: `extract-text.js` → `dom-index.js` → `overlay.js` → `content-script.js`. |
+| `content-perception` | `src/content/content-script.js`, `extract-text.js`, `dom-index.js`, `find-text.js`, `overlay.js` | Classic (non-module) content scripts injected in dependency order: `extract-text.js` → `dom-index.js` → `find-text.js` → `overlay.js` → `content-script.js`. |
 | `sidepanel-ui` | `src/sidepanel/sidepanel.html`, `.css`, `.js`, `chat-render.js` | The panel UI, its controller, and the streaming-safe renderer. |
 | `prompts` | `src/prompts/system-prompts.js`, `quick-action-templates.js` | Agent-mode system prompt and the 6 flagship quick-action templates (chat mode's prompt lives server-side now). |
 | `options-onboarding` | `src/options/options.html`, `options.js` | Account sign-in state, usage meter, settings, per-site grant management. |
@@ -333,6 +364,13 @@ ANTHROPIC_API_KEY=sk-ant-...  npx playwright test
   SUBMIT confirmation gate, and refuses to type into a password field.
 - Full scenario detail and pass criteria live in the header comment of
   `test/e2e.spec.js` and in `SPEC.json`'s `test_plan`.
+- `LEXI_AGENT_TOOLS=1 npx playwright test` runs the hermetic Agent Mode tool
+  suite (`test/agent-tools.spec.js`), which needs no API key. It covers the
+  `find_text` matcher under node, then the real extension against loopback
+  fixture pages: a long judgment, a cascading-dropdown form, a sign-in page
+  and a CAPTCHA page. It also covers `wait_for`, `select_option`, run-scope
+  enforcement, page signals, and a full agent-loop run against a scripted
+  mock model (sign-in hand-over → `find_text` → `finish`).
 
 A note on scope: Playwright cannot drive Chrome's *native* side panel
 chrome (the panel surface itself), so the suite opens the panel as a direct
