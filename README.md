@@ -139,10 +139,13 @@ Agent Mode deliberately use **two different transports** to the backend:
   pipeline (`POST /llm/chat`, the same GP v2 orchestrator, tools, and
   conversation store the web app uses) with the panel's Lexi session
   token as a Bearer credential.
-- **Agent Mode** → `anthropic-client.js` keeps talking to a dedicated
-  Lexi-operated relay shaped like the Anthropic Messages API, so the
-  client-side CDP loop's exact tool-use/thinking SSE parsing stays
-  byte-for-byte unchanged. Same Bearer token, different endpoint.
+- **Agent Mode** → `anthropic-client.js` talks to a dedicated Lexi
+  endpoint (`POST /api/extension/messages`) shaped like the Anthropic
+  Messages API, so the client-side CDP loop's tool-use/thinking SSE
+  parsing stays unchanged. The backend runs each step on its shared LLM
+  service — the same Anthropic → OpenAI → Gemini fallback chain standard
+  chat uses — and replays the reply in Anthropic's SSE shape whichever
+  provider answered. Same Bearer token, different endpoint.
 
 ```
 ┌─────────────────────────────┐        Port "lexi-sidepanel"        ┌───────────────────────────────┐

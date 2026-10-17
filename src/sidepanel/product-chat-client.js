@@ -7,8 +7,8 @@
 // tiers, tools, citations, and persistence server-side; the client sends only
 // the user's message + page context and renders the streamed blocks.
 //
-// Entirely separate from anthropic-client.js (which stays byte-fidelity for
-// Agent Mode). Mirrors the web app's useSSEStream.readSSEBody line-splitter +
+// Entirely separate from anthropic-client.js (Agent Mode's Anthropic-shaped
+// wire). Mirrors the web app's useSSEStream.readSSEBody line-splitter +
 // seq-gate so reconnect replay is idempotent.
 //
 // ES module — imported by sidepanel.js only.
