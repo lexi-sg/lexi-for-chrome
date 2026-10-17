@@ -3,9 +3,11 @@
 // Hermetic check of the Agent Mode activity timeline in the side panel
 // (src/sidepanel/agent-activity.js): the run's thinking, each tool step with
 // its label, detail and status, the narration between steps and the answer,
-// laid out like the Lexi web app's SegmentTimeline. A loopback fixture page
-// and a scripted mock model (Anthropic SSE on /api/extension/messages) stand
-// in for a real site and the backend.
+// laid out like the Lexi web app's SegmentTimeline. Also the run's Stop (on
+// screen while the model thinks, and a run stopped that early says so), and a
+// task sent on a site with agent actions off staying in the box. A loopback
+// fixture page and a scripted mock model (Anthropic SSE on
+// /api/extension/messages) stand in for a real site and the backend.
 //
 // Run: LEXI_AGENT_ACTIVITY=1 npx playwright test
 
@@ -49,7 +51,9 @@ const SCRIPT = [
 
 function startMockModel() {
   const calls = [];
-  const server = http.createServer((req, res) => {
+  // The replies this run gets, one per call; a test may swap in its own.
+  const mock = { calls, script: SCRIPT };
+  mock.server = http.createServer((req, res) => {
     if (req.method === 'GET' && req.url.startsWith('/api/extension/auth/session')) {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ account: { email: 'agent@example.test', tier: 'paid' }, usage: null }));
@@ -64,8 +68,10 @@ function startMockModel() {
     req.on('data', (c) => (body += c));
     req.on('end', async () => {
       calls.push(body);
-      const step = SCRIPT[Math.min(calls.length - 1, SCRIPT.length - 1)];
+      const { script } = mock;
+      const step = script[Math.min(calls.length - 1, script.length - 1)];
       if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs));
+      if (res.destroyed) return; // the run was stopped while the model "thought"
       const input = { ...step.tool.input };
       if (input.ref && !/^e\d+$/.test(input.ref)) {
         const escaped = input.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -100,7 +106,7 @@ function startMockModel() {
       res.end();
     });
   });
-  return { server, calls };
+  return mock;
 }
 
 function listen(server) {
@@ -231,10 +237,26 @@ test.describe('agent activity timeline', () => {
       const stopped = {
         badge: texts('.lexi-step-badge'),
         ends: texts('.lexi-step-end-text'),
+        endIcons: [...box.querySelectorAll('.lexi-step-end .lexi-step-icon')].map((i) => i.dataset.icon),
         collapsed: [...box.querySelectorAll('.lexi-seg-body')].every((b) => b.hidden),
         label: texts('.lexi-step-label').at(-1),
+        titles: texts('.lexi-seg-title'),
       };
       box.remove();
+
+      // Stopped before any step showed: a "Stopped" line, not an empty reply.
+      const early = document.createElement('div');
+      document.body.appendChild(early);
+      const b = m.createAgentActivity(early);
+      b.thinking();
+      b.finish('stopped');
+      const stoppedEarly = {
+        messages: early.querySelectorAll('.lexi-agent-msg').length,
+        groups: early.querySelectorAll('.lexi-seg').length,
+        ends: texts('.lexi-step-end-text', early),
+        icon: early.querySelector('.lexi-step-end .lexi-step-icon')?.dataset.icon,
+      };
+      early.remove();
 
       return {
         liveTitle,
@@ -256,6 +278,15 @@ test.describe('agent activity timeline', () => {
           m.stepDetail('read_page', { mode: 'text' }),
           m.stepDetail('web_search', { query: 'bail', limit: 3 }),
         ],
+        stoppedEarly,
+        // Steps that never ran (denied, stopped) stay out of a group's title.
+        groupTitles: [
+          m.groupTitle([{ name: 'read_page', status: 'ok' }, { name: 'type_text', status: 'denied' }]),
+          m.groupTitle([{ name: 'read_page', status: 'ok' }, { name: 'click', status: 'error' }, { name: 'scroll', status: 'stopped' }]),
+          m.groupTitle([{ name: 'type_text', status: 'denied' }, { name: 'click', status: 'stopped' }]),
+          m.groupTitle([{ name: 'click', status: 'stopped' }]),
+          m.groupTitle([]),
+        ],
         thought: m.plainThinking('**Planning**\n\nThe *Query* box takes __names__.\n\n**Next**\nType it.'),
       };
     });
@@ -264,7 +295,22 @@ test.describe('agent activity timeline', () => {
     expect(out.liveWait).toBe('Thinking…');
     expect(out.afterIntent).toBe(0);
     expect(out.split).toEqual({ messages: 2, firstTitle: 'Read the page', firstEnd: 'Done', firstOpen: true });
-    expect(out.stopped).toEqual({ badge: ['stopped'], ends: ['Done', 'Stopped'], collapsed: true, label: 'Open page' });
+    expect(out.stopped).toEqual({
+      badge: ['stopped'],
+      ends: ['Done', 'Stopped'],
+      endIcons: ['circle-check', 'circle-stop'],
+      collapsed: true,
+      label: 'Open page',
+      titles: ['Read the page', 'Stopped'],
+    });
+    expect(out.stoppedEarly).toEqual({ messages: 1, groups: 0, ends: ['Stopped'], icon: 'circle-stop' });
+    expect(out.groupTitles).toEqual([
+      'Read the page',
+      'Read the page and clicked',
+      'Asked for approval',
+      'Stopped',
+      'Thought it over',
+    ]);
     expect(out.titles).toEqual([
       'Read the page',
       'Read the page, typed and clicked',
@@ -361,6 +407,33 @@ test.describe('agent activity timeline', () => {
     // The page saw the search click and not the denied delete.
     expect(await page.evaluate(() => ({ ...document.body.dataset }))).toEqual({ searched: '1' });
     expect(mock.calls).toHaveLength(SCRIPT.length);
+  });
+
+  test('Stop while the model is still thinking ends the run, and the reply says it stopped', async () => {
+    test.setTimeout(60_000);
+    mock.calls.length = 0;
+    mock.script = [{ delayMs: 5000, tool: { name: 'finish', input: { answer: 'Too late.' } } }];
+    try {
+      const before = await panel.locator('.lexi-agent-msg').count();
+      await panel.locator('#prompt-input').fill('Read this page and summarise it.');
+      await panel.locator('#send-btn').click();
+
+      const msg = panel.locator('.lexi-agent-msg').nth(before);
+      await expect(msg.locator('.lexi-thinking-wait')).toBeVisible({ timeout: 15_000 });
+      await expect(panel.locator('#stop-btn')).toBeVisible();
+      await panel.locator('#stop-btn').click();
+
+      await expect(msg.locator('.lexi-step-end-text')).toHaveText('Stopped', { timeout: 10_000 });
+      await expect(msg.locator('.lexi-step-end .lexi-step-icon')).toHaveAttribute('data-icon', 'circle-stop');
+      await expect(msg.locator('.lexi-seg')).toHaveCount(0);
+      await expect(panel.locator('#acting-bar')).toBeHidden();
+      // The model's late reply never lands.
+      await new Promise((r) => setTimeout(r, 5500));
+      await expect(panel.locator('#messages')).not.toContainText('Too late.');
+      expect(mock.calls).toHaveLength(1);
+    } finally {
+      mock.script = SCRIPT;
+    }
   });
 
   test('a task sent where agent actions are off stays in the box, next to the switch', async () => {

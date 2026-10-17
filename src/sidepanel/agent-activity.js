@@ -149,6 +149,17 @@ export function plainThinking(text) {
     .trim();
 }
 
+/**
+ * Title for a finished group from its steps ({name, status}). Steps that never
+ * ran — denied, or cut off by Stop — are left out; a group where nothing ran
+ * says why.
+ */
+export function groupTitle(steps) {
+  const ran = steps.filter((s) => s.status === 'ok' || s.status === 'error').map((s) => s.name);
+  if (ran.length || !steps.length) return segmentTitle(ran);
+  return steps.some((s) => s.status === 'denied') ? 'Asked for approval' : 'Stopped';
+}
+
 function make(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -201,7 +212,7 @@ export function createAgentActivity(containerEl) {
   }
 
   function newSegment() {
-    const seg = { steps: [], names: [], thinkingRow: null, complete: false, override: null };
+    const seg = { steps: [], thinkingRow: null, complete: false, override: null };
     seg.el = make('div', 'lexi-seg');
     seg.head = make('button', 'lexi-seg-head');
     seg.head.type = 'button';
@@ -233,13 +244,18 @@ export function createAgentActivity(containerEl) {
     }
   }
 
+  /** The row that closes a run: "Done", or "Stopped" with a stop icon. */
+  function endRow(label) {
+    const end = make('div', 'lexi-step lexi-step-end');
+    end.append(icon(label === 'Done' ? 'circle-check' : 'circle-stop', 'lexi-step-icon'), make('span', 'lexi-step-end-text', label));
+    return end;
+  }
+
   function completeSegment(seg, endLabel) {
     if (seg.complete) return;
     seg.complete = true;
-    seg.titleEl.textContent = segmentTitle(seg.names);
-    const end = make('div', 'lexi-step lexi-step-end');
-    end.append(icon('circle-check', 'lexi-step-icon'), make('span', 'lexi-step-end-text', endLabel));
-    seg.body.appendChild(end);
+    seg.titleEl.textContent = groupTitle(seg.steps);
+    seg.body.appendChild(endRow(endLabel));
     applyOpen(seg);
   }
 
@@ -408,7 +424,6 @@ export function createAgentActivity(containerEl) {
         step.row = make('div', 'lexi-step lexi-step-tool');
         seg.body.appendChild(step.row);
         seg.steps.push(step);
-        seg.names.push(name);
         steps.set(id, step);
       }
       if (input) step.input = input;
@@ -457,6 +472,11 @@ export function createAgentActivity(containerEl) {
         }
       }
       closeSegment(status === 'done' ? 'Done' : 'Stopped');
+      // Stopped before anything showed: say so rather than leave the task
+      // unanswered.
+      if (status === 'stopped' && !(root && root.childElementCount)) {
+        ensureRoot().appendChild(endRow('Stopped'));
+      }
       finished = true;
       segments.forEach(applyOpen);
       if (root && injectionFlagged) {
