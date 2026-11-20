@@ -535,6 +535,32 @@
           No sites have agent actions enabled yet.
         </p>
       </div>
+
+      <hr class="divider" />
+
+      <div class="field-group" id="bridge-group">
+        <h3>Lexi chat in this browser</h3>
+        <div class="field-row">
+          <div>
+            <label for="bridge-enabled">Let Lexi chat use this browser</label>
+            <p class="muted small">
+              Your Lexi chat can then use websites here with your own
+              sign-ins and subscriptions &mdash; for example, a judgment's
+              SCC citation with its page and paragraph. It works in its own
+              tab in a &ldquo;Lexi&rdquo; tab group; close that tab to stop
+              it. Chrome asks you before it uses a site that isn't listed
+              below, and before it submits, sends, pays for, uploads,
+              downloads or deletes anything. It never signs in for you.
+            </p>
+          </div>
+          <div class="field-row-actions">
+            <input type="checkbox" id="bridge-enabled" />
+          </div>
+        </div>
+        <p class="muted small">Sites it can use without asking:</p>
+        <ul id="bridge-sites-list" class="site-grants-list"></ul>
+        <p id="bridge-status" class="muted small" role="status"></p>
+      </div>
     </section>
 
     <!-- ==================================================================
@@ -558,6 +584,13 @@
         long as it's active, and Lexi always asks before anything risky
         &mdash; submitting a form, navigating to a new site, paying,
         sending a message, uploading, downloading, or deleting.
+      </p>
+      <p>
+        If you switch on a site under <strong>Sites Lexi chat can use</strong>,
+        this browser keeps a connection open to Lexi while you're signed in.
+        Your Lexi chat can then open a tab on that site, read and search it,
+        and send what it finds back to your chat. It can't act on any other
+        site, and it can't submit forms, pay, download, or delete.
       </p>
     </section>
   </main>

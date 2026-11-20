@@ -23,10 +23,15 @@ const isChannel = !!process.env.LEXI_CHANNEL;
 // scope, sign-in/CAPTCHA hand-over) — test/agent-tools.spec.js, opt-in behind
 // LEXI_AGENT_TOOLS for the same reason.
 const isAgentTools = !!process.env.LEXI_AGENT_TOOLS;
+// Browser bridge suite (Lexi's server-side chat driving a tab, against a mock
+// backend) — test/bridge.spec.js, opt-in behind LEXI_BRIDGE.
+const isBridge = !!process.env.LEXI_BRIDGE;
 
 module.exports = {
   testDir: './test',
-  testMatch: isAgentTools
+  testMatch: isBridge
+    ? /bridge\.spec\.js$/
+    : isAgentTools
     ? /agent-tools\.spec\.js$/
     : isChannel
     ? /channel-config\.spec\.js$/

@@ -75,6 +75,9 @@ const manifestPath = path.join(STAGE, 'manifest.json');
 const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 delete manifest.optional_permissions;
 delete manifest.optional_host_permissions;
+// tabGroups only labels the browser bridge's tabs, and the bridge is part of
+// Agent Mode.
+manifest.permissions = (manifest.permissions || []).filter((p) => p !== 'tabGroups');
 // Prod store build declares BOTH Lexi backend hosts: the runtime channel
 // switch means one published ZIP may talk to EITHER api.getlexi.io (prod) or
 // api-staging.getlexi.io (the CWS-review login window), flipped server-side, so

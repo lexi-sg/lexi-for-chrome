@@ -435,7 +435,13 @@
     var nothingFocused = !ref && (!el || el === document.body || el === document.documentElement);
     if (!el) return { found: false, isSearch: false, isLink: false, nothingFocused: nothingFocused };
     var isSearch = (isSearchField(el) && isSearchOnlyForm(el.form)) || isSearchButton(el);
-    return { found: true, isSearch: isSearch, isLink: isPlainLink(el), nothingFocused: nothingFocused };
+    return {
+      found: true,
+      isSearch: isSearch,
+      isLink: isPlainLink(el),
+      nothingFocused: nothingFocused,
+      name: nothingFocused ? '' : accessibleName(el),
+    };
   }
 
   var NON_TEXT_INPUT_TYPES = ['hidden', 'submit', 'button', 'image', 'reset', 'checkbox', 'radio'];
