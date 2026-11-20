@@ -243,6 +243,12 @@ justification fields.
 > task; also powers optional scheduled re-checks. No background network
 > activity.
 
+**`tabGroups`** (full build only)
+> Puts the tab Lexi works in, when the user's Lexi chat looks something up
+> on a legal research site the user switched on in settings (SCC Online,
+> Manupatra), into a labelled "Lexi" tab group, so the user can always see
+> which tab Lexi is using. Lexi never groups or reads the user's other tabs.
+
 **Host permission `https://api.getlexi.io/*`**
 > Sends the signed-in user's page content (and, for Screenshot & ask, a
 > screenshot) plus their Lexi session token to Lexi's own backend, which
@@ -268,7 +274,10 @@ justification fields.
 **Optional host permission `<all_urls>`**
 > OPTIONAL, requested together with `debugger` only when the user enables
 > agent actions on a site outside `activeTab` scope, so the agent can act
-> across a multi-page legal portal flow the user initiated.
+> across a multi-page legal portal flow the user initiated. Also requested,
+> one site at a time, when the user switches on a legal research site under
+> "Sites Lexi chat can use" (e.g. `https://*.scconline.com/*`), so Lexi chat
+> can read judgments there through the user's own subscription.
 
 ### Cross-origin messaging
 
