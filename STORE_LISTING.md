@@ -244,10 +244,11 @@ justification fields.
 > activity.
 
 **`tabGroups`** (full build only)
-> Puts the tab Lexi works in, when the user's Lexi chat looks something up
-> on a legal research site the user switched on in settings (SCC Online,
-> Manupatra), into a labelled "Lexi" tab group, so the user can always see
-> which tab Lexi is using. Lexi never groups or reads the user's other tabs.
+> Puts the tab Lexi works in, when the user has let Lexi chat use their
+> browser (off by default) and chat looks something up for them (e.g. a
+> judgment on SCC Online or Manupatra), into a labelled "Lexi" tab group, so
+> the user can always see which tab Lexi is using. Lexi never groups or
+> reads the user's other tabs.
 
 **Host permission `https://api.getlexi.io/*`**
 > Sends the signed-in user's page content (and, for Screenshot & ask, a
@@ -274,10 +275,12 @@ justification fields.
 **Optional host permission `<all_urls>`**
 > OPTIONAL, requested together with `debugger` only when the user enables
 > agent actions on a site outside `activeTab` scope, so the agent can act
-> across a multi-page legal portal flow the user initiated. Also requested,
-> one site at a time, when the user switches on a legal research site under
-> "Sites Lexi chat can use" (e.g. `https://*.scconline.com/*`), so Lexi chat
-> can read judgments there through the user's own subscription.
+> across a multi-page legal portal flow the user initiated. Also requested
+> when the user turns on "Let Lexi chat use this browser" (off by default),
+> so Lexi chat can read pages such as judgments through the user's own
+> subscriptions. Even then, Chrome shows the user a Lexi window asking
+> before chat uses any site that isn't on the user's own list, and before
+> it submits, pays, sends, uploads, downloads or deletes anything.
 
 ### Cross-origin messaging
 

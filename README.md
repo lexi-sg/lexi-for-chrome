@@ -250,17 +250,20 @@ While active:
 
 ### Lexi chat in this browser (browser bridge)
 
-Lexi's chat agent runs on the server, but it can use a tab in the user's own
-Chrome, on sites the user switches on under Options → **Sites Lexi chat can
-use** (SCC Online, Manupatra). That's how chat gets a judgment's reporter
-citation, page and paragraph through the user's own subscription. Switching a
-site on requests host access to it; while the user is signed in and at least
-one site is on, the service worker keeps a WebSocket open to Lexi
-(`src/background/bridge-client.js`). Chat's commands run through the same
-`execTool` gate as Agent Mode, in a background tab in a green "Lexi" tab
-group, scoped to the user's sites. Remote sessions can read, search, click,
-type, scroll and navigate; anything that needs a confirmation is refused, and
-stored per-site grants don't carry over. Closing the tab ends the session.
+Lexi's chat agent runs on the server, but once the user turns on Options →
+**Lexi chat in this browser** it can use a tab in the user's own Chrome, on
+any website. That's how chat gets a judgment's reporter citation, page and
+paragraph through the user's own SCC Online or Manupatra subscription.
+Turning it on requests host access to all sites; while the user is signed in
+and it's on, the service worker keeps a WebSocket open to Lexi
+(`src/background/bridge-client.js`). Before chat uses a site that isn't on
+the user's "use without asking" list, and before it submits, pays, sends,
+uploads, downloads or deletes anything, Chrome pops up a small Lexi window
+asking the user (`src/background/bridge-ask.js`, `src/bridge/ask.html`); no
+answer is a no. Chat's commands run through the same `execTool` gate as Agent
+Mode, in a background tab in a green "Lexi" tab group, scoped to the sites
+the user allowed. Stored per-site grants don't carry over, and the side
+panel's Agent Mode is unaffected. Closing the tab ends the session.
 Protocol and backend routing: [docs/browser-bridge.md](./docs/browser-bridge.md).
 
 Agent Mode tools (`src/agent/tools.js`): `read_page`, `screenshot`, `click`,
@@ -311,7 +314,7 @@ something.
 | `foundation` | `manifest.json`, `src/config.js` | Manifest + the `MSG`/`MODELS`/`LIMITS`/`STORAGE_KEYS`/`DENYLIST`/`CSS_TOKENS` single source of truth. |
 | `service-worker` | `src/background/service-worker.js`, `permission-manager.js` | Port registry, message router, site-policy gate, sign-in handoff (`onMessageExternal`). |
 | `cdp-tools` | `src/background/cdp-driver.js`, `action-executor.js` | Chrome DevTools Protocol driver + tool→CDP/fallback mapping with TOCTOU origin re-checks. |
-| `bridge` | `src/background/bridge-client.js`, `docs/browser-bridge.md` | The browser bridge: Lexi's server-side chat driving a tab on the user's switched-on sites over a WebSocket. |
+| `bridge` | `src/background/bridge-client.js`, `bridge-ask.js`, `src/bridge/ask.html`, `docs/browser-bridge.md` | The browser bridge: Lexi's server-side chat driving a tab in the user's Chrome over a WebSocket, asking the user in Chrome before a new site or a risky action. |
 | `agent-core` | `src/agent/anthropic-client.js`, `agent-loop.js`, `tools.js`, `host-scope.js` | Agent Mode's relay client, the OBSERVE→PLAN→ACT loop, tool schemas, and a run's host allowlist helpers (shared with the SW). |
 | `product-chat` | `src/sidepanel/product-chat-client.js` | Chat mode's transport — streams the real `/llm/chat` product pipeline and drives `chat-render.js`. |
 | `providers-nano` | `src/agent/gemini-nano.js` | Optional keyless on-device (Chrome built-in Prompt API) tier. |
@@ -391,8 +394,9 @@ ANTHROPIC_API_KEY=sk-ant-...  npx playwright test
 - `LEXI_BRIDGE=1 npx playwright test` runs the hermetic browser-bridge suite
   (`test/bridge.spec.js`): a mock Lexi backend (ticket endpoint + bridge
   WebSocket) drives the real extension through open → search → `find_text` →
-  close on a loopback-served "SCC Online", and checks the refusals (sites not
-  switched on, confirmations, password fields) and the connection lifecycle.
+  close on a loopback-served "SCC Online", and checks the asks in Chrome (a new
+  site, a form submit: allow, always allow, don't allow, closing the window),
+  the password-field refusal and the connection lifecycle.
 - Where Playwright's own Chromium can't start (managed Windows machines that
   block unsigned binaries), `LEXI_BROWSER_CHANNEL=msedge` runs the bridge
   suite in the installed Edge instead.
