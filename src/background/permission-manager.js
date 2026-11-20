@@ -33,7 +33,7 @@ function hostOf(origin) {
   }
 }
 
-function isDenylisted(origin) {
+export function isDenylisted(origin) {
   const host = hostOf(origin);
   return DENYLIST.some((pattern) => pattern.test(host) || pattern.test(String(origin || '')));
 }
@@ -291,6 +291,8 @@ function scopeDecision(origin, actionClass, { allowedHosts, isSearch } = {}) {
  *   isLink       — a click or Enter lands on a plain link (dom-index isPlainLink)
  *   nothingFocused — a key press lands on the page itself, no field focused
  *   isBack       — the call is go_back
+ *   ignoreGrants — skip stored per-origin grants (step 3); a remote (bridge)
+ *                  session never inherits what the user approved in the panel
  *
  * Order of precedence:
  *  0. Scoped run, navigation with a target: allowed only to an allowed,
@@ -342,10 +344,12 @@ export async function check(origin, actionClass, approvalMode = 'manual', toolUs
   const browse = browseDecision(origin, actionClass, context || {});
   if (browse) return browse;
 
-  const grants = await readAllGrants();
-  const record = grants[origin];
-  if (hasAlwaysGrant(record, actionClass) || hasOnceGrant(record, actionClass, toolUseId)) {
-    return { decision: 'allow', reason: 'Previously approved for this site.' };
+  if (!(context && context.ignoreGrants)) {
+    const grants = await readAllGrants();
+    const record = grants[origin];
+    if (hasAlwaysGrant(record, actionClass) || hasOnceGrant(record, actionClass, toolUseId)) {
+      return { decision: 'allow', reason: 'Previously approved for this site.' };
+    }
   }
 
   if (RISKY_CLASSES.includes(actionClass)) {

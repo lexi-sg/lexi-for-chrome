@@ -34,7 +34,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "alarms"
+    "alarms",
+    "tabGroups"
   ],
   "host_permissions": [
     "https://api.getlexi.io/*",
@@ -54,6 +55,6 @@
     ]
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.getlexi.io https://api-staging.getlexi.io https://api.anthropic.com"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.getlexi.io https://api-staging.getlexi.io wss://api.getlexi.io wss://api-staging.getlexi.io https://api.anthropic.com"
   }
 }

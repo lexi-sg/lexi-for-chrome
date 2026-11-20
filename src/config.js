@@ -62,6 +62,9 @@ export const MSG = {
   // literal the connect page posts (see donna-frontend connect.tsx).
   CONNECT_RECEIVED: 'LEXI_EXTENSION_CONNECT',
 
+  // Browser bridge (Options -> SW)
+  GET_BRIDGE_STATUS: 'GET_BRIDGE_STATUS', // -> {connected, sites, error}
+
   // Content-script channel (SW <-> Content script, via tabs.sendMessage)
   CS_EXTRACT: 'CS_EXTRACT',
   CS_PAGE: 'CS_PAGE',
@@ -174,6 +177,42 @@ export const SESSION_PATH = '/api/extension/auth/session';
 export const REVOKE_PATH = '/api/extension/auth/revoke';
 
 // ---------------------------------------------------------------------------
+// Browser bridge — Lexi's server-side chat drives a tab in this browser, on
+// sites the user switched on (src/background/bridge-client.js; protocol in
+// docs/browser-bridge.md).
+// ---------------------------------------------------------------------------
+export const BRIDGE_TICKET_PATH = '/api/extension/bridge/ticket';
+export const BRIDGE_WS_PATH = '/api/extension/bridge/ws';
+export const BRIDGE_PROTOCOL = 1;
+// Under Chrome's 30 s idle limit, so the socket keeps the service worker alive.
+export const BRIDGE_PING_MS = 20000;
+// Reconnect delays after a dropped socket or a failed ticket, last one repeats.
+export const BRIDGE_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+export const BRIDGE_OPEN_TIMEOUT_MS = 30000;
+// Sites the settings page offers. `hosts` cover their subdomains.
+// TODO: confirm the hosts SCC Online and Manupatra subscribers sign in on.
+export const BRIDGE_SITE_PRESETS = [
+  { id: 'scc', label: 'SCC Online', hosts: ['scconline.com'] },
+  { id: 'manupatra', label: 'Manupatra', hosts: ['manupatrafast.in', 'manupatra.com'] },
+];
+// The tools a remote session may run (the rest of TOOLS need the panel).
+export const BRIDGE_TOOLS = [
+  'read_page',
+  'find_text',
+  'click',
+  'type_text',
+  'select_option',
+  'press_key',
+  'scroll',
+  'navigate',
+  'go_back',
+  'wait_for',
+];
+// chrome.storage.session key: {[sessionId]: {tabId, allowedHosts}} for the
+// bridge's open sessions, so a service-worker restart keeps them.
+export const BRIDGE_SESSIONS_KEY = 'lexi_bridge_sessions';
+
+// ---------------------------------------------------------------------------
 // Anthropic API endpoints — RETAINED for the UI-less BYOK escape hatch (the
 // hermetic Agent-Mode e2e seam). Not part of the shipping login-only UX.
 // ---------------------------------------------------------------------------
@@ -242,6 +281,7 @@ export const STORAGE_KEYS = {
   APPROVAL_MODE: 'lexi_approval_mode',
   SITE_GRANTS: 'lexi_site_grants',
   PROVIDER: 'lexi_provider',
+  BRIDGE_SITES: 'lexi_bridge_sites', // hosts Lexi chat may use through the bridge
 };
 
 // chrome.storage.session key holding the in-flight sign-in nonce (state) minted

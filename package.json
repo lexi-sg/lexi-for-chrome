@@ -11,6 +11,8 @@
   "license": "ISC",
   "devDependencies": {
     "@playwright/test": "^1.61.1",
-    "playwright": "^1.61.1"
+    "playwright": "^1.61.1",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.23.0"
   }
 }

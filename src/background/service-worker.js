@@ -25,6 +25,7 @@ import {
   SESSION_PATH,
   REVOKE_PATH,
   RUN_SCOPES_KEY,
+  LEXI_CHANNEL_CONFIG,
 } from '../config.js';
 import { normalizeAllowedHosts } from '../agent/host-scope.js';
 import { refreshChannelConfig, getActiveConfig, ensureActiveConfig } from './channel-config.js';
@@ -39,6 +40,7 @@ import {
   wasEverAttached,
 } from './cdp-driver.js';
 import { execute as executeTool } from './action-executor.js';
+import { createBridge } from './bridge-client.js';
 
 // Read-only observability of the CDP attach state, for the acting-bar UI and
 // the e2e harness (which asserts the trusted-input path really attached and
@@ -436,12 +438,38 @@ async function handleExternalConnect(message, sender) {
 // EXEC_TOOL
 // ---------------------------------------------------------------------------
 
-async function execTool(message, tabId) {
-  const { toolUseId, input } = message;
+// The tools whose risk depends on the element they act on (a button labelled
+// "Pay now" makes a click a PAY).
+const NAMED_TARGET_TOOLS = new Set(['click', 'type_text', 'select_option']);
+
+/** A remote call's input with the element's accessible name read from the
+ * page itself, never taken from the caller. */
+async function withPageElementName(tabId, tool, input) {
+  if (!NAMED_TARGET_TOOLS.has(tool) || !input || !input.ref) return input;
+  try {
+    const info = await sendToContentScript(tabId, { type: MSG.CS_FIELD_INFO, ref: input.ref });
+    return { ...input, elementName: (info && info.name) || '' };
+  } catch {
+    return { ...input, elementName: '' };
+  }
+}
+
+/**
+ * Run one tool call on a tab behind the policy gate. Returns
+ * {toolUseId, ok, result, error, code}; code is 'blocked' |
+ * 'needs_confirmation' | 'tool_failed' when ok is false.
+ *
+ * remote: the call comes from the browser bridge (Lexi's server-side chat),
+ * not the side panel. Nobody is there to confirm, so anything short of
+ * 'allow' is refused, and stored per-site grants are ignored.
+ */
+async function execTool(message, tabId, { remote = false } = {}) {
+  const { toolUseId } = message;
   // The tool name arrives under different keys depending on the caller:
   // agent-loop.js sends `name`, sidepanel.js's chat-mode loop sends
   // `toolName`, and the original SW contract used `tool`. Accept all three.
   const tool = message.tool ?? message.name ?? message.toolName;
+  const input = remote ? await withPageElementName(tabId, tool, message.input) : message.input;
 
   // Defense-in-depth: the panel gates confirmations client-side, but the SW is
   // the real execution boundary. Re-derive the policy here from the LIVE tab
@@ -451,11 +479,22 @@ async function execTool(message, tabId) {
   const origin = await getTabOrigin(tabId).catch(() => null);
   const actionClass = permissionManager.classifyAction(tool, input);
   const context = await policyContext(tabId, tool, input, actionClass);
+  if (remote) context.ignoreGrants = true;
   const policy = await permissionManager.check(origin, actionClass, 'manual', toolUseId, context);
 
   // Hard denylist / browser-internal scheme: never execute.
   if (policy.decision === 'block') {
-    return { toolUseId, ok: false, result: null, error: policy.reason };
+    return { toolUseId, ok: false, result: null, error: policy.reason, code: 'blocked' };
+  }
+
+  if (remote && policy.decision !== 'allow') {
+    return {
+      toolUseId,
+      ok: false,
+      result: null,
+      error: `"${actionClass}" needs the user's confirmation, which Lexi chat can't ask for — not executing.`,
+      code: 'needs_confirmation',
+    };
   }
 
   // A RISKY_CLASSES action MUST carry an explicit human grant (once/always),
@@ -469,19 +508,20 @@ async function execTool(message, tabId) {
       ok: false,
       result: null,
       error: `"${actionClass}" requires explicit confirmation, which was not on record — not executing.`,
+      code: 'needs_confirmation',
     };
   }
 
-  if (origin && toolUseId) {
+  if (origin && toolUseId && !remote) {
     // Best-effort cleanup of any once-grant this call was consuming.
     await permissionManager.consumeOnceGrant(origin, actionClass, toolUseId).catch(() => {});
   }
 
   try {
     const { ok, result, error } = await executeTool(tool, input, tabId);
-    return { toolUseId, ok: !!ok, result: result ?? null, error: error || null };
+    return { toolUseId, ok: !!ok, result: result ?? null, error: error || null, code: ok ? null : 'tool_failed' };
   } catch (err) {
-    return { toolUseId, ok: false, result: null, error: (err && err.message) || String(err) };
+    return { toolUseId, ok: false, result: null, error: (err && err.message) || String(err), code: 'tool_failed' };
   }
 }
 
@@ -513,6 +553,29 @@ async function announceControlMode(tabId) {
     tabId,
   );
 }
+
+// ---------------------------------------------------------------------------
+// Browser bridge — Lexi's server-side chat driving a tab in this browser on
+// the sites the user switched on (bridge-client.js, docs/browser-bridge.md).
+// ---------------------------------------------------------------------------
+
+const bridge = createBridge({
+  execTool,
+  setRunScope,
+  startControl: async (tabId) => {
+    await sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: true }).catch(() => {});
+    await announceControlMode(tabId);
+  },
+  endControl: async (tabId) => {
+    await setRunScope(tabId, []).catch(() => {});
+    await detach(tabId).catch(() => {});
+    await sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: false }).catch(() => {});
+  },
+  onAuthExpired: async () => {
+    await clearAccountKeys();
+    broadcast({ type: MSG.AUTH_CHANGED, expired: true });
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Central message handler — shared by the Port channel (side panel) and the
@@ -662,6 +725,9 @@ async function handleMessage(message, senderTabIdHint, { fromPort = false } = {}
     case MSG.PORT_HELLO:
       return null;
 
+    case MSG.GET_BRIDGE_STATUS:
+      return bridge.status();
+
     default:
       return null;
   }
@@ -804,6 +870,7 @@ function onDebuggerDetach(source, reason) {
   forgetDetached(tabId);
   broadcast({ type: MSG.AGENT_STOP, tabId, reason: reason || 'debugger_detached' }, tabId);
   sendToContentScript(tabId, { type: MSG.CS_OVERLAY, show: false }).catch(() => {});
+  bridge.onTabStopped(tabId).catch(() => {});
 }
 
 function registerDebuggerDetachListener() {
@@ -867,7 +934,26 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     return;
   }
   if (alarm.name !== KEEPALIVE_ALARM) return;
+  // Also revives the bridge socket after Chrome stopped an idle worker.
+  bridge.sync().catch(() => {});
 });
+
+// The bridge follows sign-in, the user's sites and the backend channel.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (
+    changes[STORAGE_KEYS.EXTENSION_TOKEN] ||
+    changes[STORAGE_KEYS.AUTH_MODE] ||
+    changes[STORAGE_KEYS.BRIDGE_SITES] ||
+    changes[LEXI_CHANNEL_CONFIG]
+  ) {
+    bridge.sync({ now: true }).catch(() => {});
+  }
+});
+if (chrome.permissions && chrome.permissions.onRemoved) {
+  chrome.permissions.onRemoved.addListener(() => bridge.sync({ now: true }).catch(() => {}));
+}
+bridge.sync().catch(() => {});
 
 // Note: we deliberately do NOT declare/use the "webNavigation" permission to
 // proactively invalidate the injected-tabs cache on SPA/full navigations —
@@ -879,4 +965,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   injectedTabs.delete(tabId);
   detach(tabId).catch(() => {});
+  setRunScope(tabId, []).catch(() => {});
+  bridge.onTabRemoved(tabId).catch(() => {});
 });

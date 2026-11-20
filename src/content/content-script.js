@@ -144,7 +144,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // CS_FIELD_INFO{ref?} -> CS_FIELD{found, isSearch, isLink, nothingFocused}
+  // CS_FIELD_INFO{ref?} -> CS_FIELD{found, isSearch, isLink, nothingFocused, name}
   // ---------------------------------------------------------------------
   function handleFieldInfo(message, sendResponse) {
     try {
@@ -155,6 +155,7 @@
         isSearch: !!info.isSearch,
         isLink: !!info.isLink,
         nothingFocused: !!info.nothingFocused,
+        name: info.name || '',
       });
     } catch (err) {
       sendResponse({ type: MSG.CS_FIELD, found: false, isSearch: false, isLink: false, error: errMessage(err) });
