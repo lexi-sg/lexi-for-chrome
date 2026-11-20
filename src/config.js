@@ -64,6 +64,7 @@ export const MSG = {
 
   // Browser bridge (Options -> SW)
   GET_BRIDGE_STATUS: 'GET_BRIDGE_STATUS', // -> {connected, sites, error}
+  BRIDGE_ASK_ANSWER: 'BRIDGE_ASK_ANSWER', // ask window -> SW: {id, answer}
 
   // Content-script channel (SW <-> Content script, via tabs.sendMessage)
   CS_EXTRACT: 'CS_EXTRACT',
@@ -177,9 +178,11 @@ export const SESSION_PATH = '/api/extension/auth/session';
 export const REVOKE_PATH = '/api/extension/auth/revoke';
 
 // ---------------------------------------------------------------------------
-// Browser bridge — Lexi's server-side chat drives a tab in this browser, on
-// sites the user switched on (src/background/bridge-client.js; protocol in
-// docs/browser-bridge.md).
+// Browser bridge — Lexi's server-side chat drives a tab in this browser once
+// the user lets it (src/background/bridge-client.js; protocol in
+// docs/browser-bridge.md). Chrome asks the user before chat uses a site not on
+// their list, and before anything Agent Mode would confirm
+// (src/background/bridge-ask.js).
 // ---------------------------------------------------------------------------
 export const BRIDGE_TICKET_PATH = '/api/extension/bridge/ticket';
 export const BRIDGE_WS_PATH = '/api/extension/bridge/ws';
@@ -189,7 +192,13 @@ export const BRIDGE_PING_MS = 20000;
 // Reconnect delays after a dropped socket or a failed ticket, last one repeats.
 export const BRIDGE_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
 export const BRIDGE_OPEN_TIMEOUT_MS = 30000;
-// Sites the settings page offers. `hosts` cover their subdomains.
+// How long an ask window waits for the user; no answer is a no.
+export const BRIDGE_ASK_TIMEOUT_MS = 45000;
+// The host access the bridge needs: chat may open any site, and a remote run
+// has no click to grant activeTab. The settings switch asks Chrome for it.
+export const BRIDGE_HOST_ACCESS = { origins: ['<all_urls>'] };
+// Sites the settings page offers to allow without asking. `hosts` cover their
+// subdomains.
 // TODO: confirm the hosts SCC Online and Manupatra subscribers sign in on.
 export const BRIDGE_SITE_PRESETS = [
   { id: 'scc', label: 'SCC Online', hosts: ['scconline.com'] },
@@ -281,7 +290,8 @@ export const STORAGE_KEYS = {
   APPROVAL_MODE: 'lexi_approval_mode',
   SITE_GRANTS: 'lexi_site_grants',
   PROVIDER: 'lexi_provider',
-  BRIDGE_SITES: 'lexi_bridge_sites', // hosts Lexi chat may use through the bridge
+  BRIDGE_ENABLED: 'lexi_bridge_enabled', // the user lets Lexi chat use this browser
+  BRIDGE_SITES: 'lexi_bridge_sites', // hosts Lexi chat may use without asking
 };
 
 // chrome.storage.session key holding the in-flight sign-in nonce (state) minted

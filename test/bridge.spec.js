@@ -4,8 +4,9 @@
 // docs/browser-bridge.md): Lexi's server-side chat driving a tab in this
 // browser. A local mock plays Lexi's backend — the ticket endpoint and the
 // bridge WebSocket — and sends commands the way the chat's browser tools
-// would. "SCC Online" and a site the user did not switch on are served from
-// loopback HTTPS (see startSiteServer), so nothing leaves the machine.
+// would. "SCC Online" (on the user's list) and a site that is not are served
+// from loopback HTTPS (see startSiteServer), so nothing leaves the machine.
+// The tests answer Chrome's ask window (src/bridge/ask.html) as the user.
 //
 // Run: LEXI_BRIDGE=1 npx playwright test
 // (opt-in behind LEXI_BRIDGE, like the other non-default suites — see
@@ -31,8 +32,10 @@ const STORAGE_KEYS = {
   AUTH_MODE: 'lexi_auth_mode',
   EXTENSION_TOKEN: 'lexi_extension_token',
   SITE_GRANTS: 'lexi_site_grants',
+  BRIDGE_ENABLED: 'lexi_bridge_enabled',
   BRIDGE_SITES: 'lexi_bridge_sites',
 };
+const KANOON = 'https://indiankanoon.org';
 
 const FAKE_TOKEN = 'lexiext_test_bridge_000000000000000000000000';
 const SCC = 'https://www.scconline.com';
@@ -73,6 +76,8 @@ const SCC_PAGES = {
 <label>Comment <textarea name="comment"></textarea></label>
 <button type="submit">Submit feedback</button>
 </form></body></html>`,
+  '/thanks': `<!doctype html><html><head><meta charset="utf-8"><title>Thanks</title></head>
+<body><p>Thanks for your feedback.</p></body></html>`,
   '/login': `<!doctype html><html><head><meta charset="utf-8"><title>Sign in</title></head>
 <body><form action="/session" method="post">
 <label>Email <input name="email" type="email"></label>
@@ -171,8 +176,8 @@ function listen(server) {
 }
 
 // Test-only extension copy: identical product code; the backend pointed at
-// the mock, and host access to SCC Online granted at install (in the product
-// the settings page requests it when the user switches the site on).
+// the mock, and host access to every site granted at install (in the product
+// the settings switch "Let Lexi chat use this browser" requests it).
 function buildTestExtensionCopy(mockOrigin) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexi-bridge-ext-'));
   for (const entry of ['manifest.json', 'icons', 'src']) {
@@ -183,8 +188,7 @@ function buildTestExtensionCopy(mockOrigin) {
   manifest.host_permissions = [
     ...(manifest.host_permissions || []),
     `${mockOrigin}/*`,
-    'https://scconline.com/*',
-    'https://*.scconline.com/*',
+    '<all_urls>',
   ];
   const wsOrigin = mockOrigin.replace(/^http/, 'ws');
   manifest.content_security_policy.extension_pages += ` ${mockOrigin} ${wsOrigin}`;
@@ -304,34 +308,57 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     return el.ref;
   }
 
-  test('stays off until the user switches a site on, then connects with a ticket and says hello', async () => {
-    await setStorage({ [STORAGE_KEYS.AUTH_MODE]: 'account', [STORAGE_KEYS.EXTENSION_TOKEN]: FAKE_TOKEN });
+  const askPages = () => context.pages().filter((p) => p.url().includes('/src/bridge/ask.html'));
+
+  // Sends a command that makes Chrome ask the user, and answers the ask
+  // window as the user would: `button` is #allow, #always or #deny; null
+  // closes the window. Returns the command's reply and what the window asked.
+  async function answering(button, send) {
+    const opened = context.waitForEvent('page', { timeout: 15000 });
+    const reply = send();
+    const ask = await opened;
+    await ask.waitForURL(/\/src\/bridge\/ask\.html/);
+    await expect(ask.locator('#question')).not.toBeEmpty();
+    const question = await ask.locator('body').innerText();
+    if (button) await ask.locator(button).click();
+    else await ask.close();
+    return { reply: await reply, question };
+  }
+
+  test('stays off until the user switches it on, then connects with a ticket and says hello', async () => {
+    await setStorage({
+      [STORAGE_KEYS.AUTH_MODE]: 'account',
+      [STORAGE_KEYS.EXTENSION_TOKEN]: FAKE_TOKEN,
+      [STORAGE_KEYS.BRIDGE_SITES]: ['scconline.com'],
+    });
     await new Promise((r) => setTimeout(r, 1500));
     expect(mock.state.ticketCalls).toHaveLength(0);
 
-    await setStorage({ [STORAGE_KEYS.BRIDGE_SITES]: ['scconline.com'] });
+    await setStorage({ [STORAGE_KEYS.BRIDGE_ENABLED]: true });
     await expect.poll(() => mock.state.frames.find((f) => f.type === 'hello'), { timeout: 15000 }).toBeTruthy();
     expect(mock.state.ticketCalls[0].authorization).toBe(`Bearer ${FAKE_TOKEN}`);
     const hello = mock.state.frames.find((f) => f.type === 'hello');
-    expect(hello).toMatchObject({ protocol: 1, sites: ['scconline.com'] });
+    expect(hello).toMatchObject({ protocol: 1, sites: ['scconline.com'], any_site: true });
     expect(typeof hello.extension_version).toBe('string');
 
-    // The settings page shows the bridge as connected, with SCC Online on.
+    // The settings page shows the bridge on and connected, SCC Online listed.
     const options = await context.newPage();
     await options.goto(`chrome-extension://${extensionId}/src/options/options.html`);
     await expect(options.locator('#bridge-status')).toHaveText(/^Connected/);
+    await expect(options.locator('#bridge-enabled')).toBeChecked();
     await expect(options.locator('#bridge-site-scc')).toBeChecked();
     await expect(options.locator('#bridge-site-manupatra')).not.toBeChecked();
     await options.close();
   });
 
-  test('open puts a background tab on the site, in the Lexi tab group', async () => {
+  test('open puts a background tab on a listed site, in the Lexi tab group, without asking', async () => {
     const reply = await mock.command('open', 's1', { url: `${SCC}/`, allowed_hosts: ['scconline.com'] });
     expect(reply.ok, JSON.stringify(reply)).toBe(true);
     expect(reply.result).toMatchObject({ url: `${SCC}/`, title: 'SCC Online' });
     const tabs = await sessionTabs();
     expect(tabs).toHaveLength(1);
     expect(tabs[0]).toMatchObject({ active: false, group: 'Lexi' });
+    expect(askPages()).toHaveLength(0);
   });
 
   // Chat sends its next command the moment open or navigate answers, and the
@@ -380,7 +407,7 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     expect(read.result.text).toContain('(2019) 4 SCC 123');
   });
 
-  test('anything needing a confirmation is refused, even with a stored grant or a disguised name', async () => {
+  test('anything needing a confirmation asks in Chrome first, even with a stored grant or a disguised name', async () => {
     await setStorage({
       [STORAGE_KEYS.SITE_GRANTS]: {
         [SCC]: { agentEnabled: false, classes: ['SUBMIT', 'CLICK', 'TYPE'], onceGrants: [], expiresAt: null },
@@ -389,18 +416,23 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     const nav = await mock.command('tool', 's1', { name: 'navigate', input: { url: `${SCC}/feedback` } });
     expect(nav.ok, JSON.stringify(nav)).toBe(true);
     const button = await refByName('s1', 'Submit feedback');
-    const reply = await mock.command('tool', 's1', {
-      name: 'click',
-      input: { ref: button, elementName: 'Read more' },
-    });
-    expect(reply).toMatchObject({ ok: false, code: 'needs_confirmation' });
+    const refused = await answering('#deny', () =>
+      mock.command('tool', 's1', { name: 'click', input: { ref: button, elementName: 'Read more' } }),
+    );
+    // The window names the button as the page shows it, not as chat named it.
+    expect(refused.question).toContain('scconline.com');
+    expect(refused.question).toContain('“Submit feedback”');
+    expect(refused.question).not.toContain('Read more');
+    expect(refused.reply).toMatchObject({ ok: false, code: 'declined' });
 
     const field = await refByName('s1', 'Your name');
-    const submit = await mock.command('tool', 's1', {
-      name: 'type_text',
-      input: { ref: field, text: 'A', submit: true },
-    });
-    expect(submit).toMatchObject({ ok: false, code: 'needs_confirmation' });
+    const allowed = await answering('#allow', () =>
+      mock.command('tool', 's1', { name: 'type_text', input: { ref: field, text: 'A', submit: true } }),
+    );
+    expect(allowed.question).toContain('“A”');
+    expect(allowed.reply.ok, JSON.stringify(allowed.reply)).toBe(true);
+    const landed = await mock.command('tool', 's1', { name: 'wait_for', input: { text: 'Thanks for your feedback' } });
+    expect(landed.result.matched).toBe(true);
   });
 
   test('a password field is refused', async () => {
@@ -411,27 +443,54 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     expect(reply.error).toMatch(/password/i);
   });
 
-  test('sites the user did not switch on are refused, at open and on navigation', async () => {
-    const open = await mock.command('open', 's2', {
-      url: 'https://indiankanoon.org/',
-      allowed_hosts: ['indiankanoon.org'],
-    });
-    expect(open).toMatchObject({ ok: false, code: 'site_not_enabled' });
+  test('a site not on the list asks first, at open and on navigation; no means declined', async () => {
+    const kanoon = { url: `${KANOON}/`, allowed_hosts: ['indiankanoon.org'] };
+    const refused = await answering('#deny', () => mock.command('open', 's2', kanoon));
+    expect(refused.question).toContain('Lexi chat wants to use indiankanoon.org');
+    expect(refused.reply).toMatchObject({ ok: false, code: 'declined' });
 
-    // Asking for more hosts than the user allows narrows the scope to theirs.
-    const widened = await mock.command('open', 's3', {
-      url: `${SCC}/`,
-      allowed_hosts: ['scconline.com', 'indiankanoon.org'],
-    });
-    expect(widened.ok).toBe(true);
-    const off = await mock.command('tool', 's3', { name: 'navigate', input: { url: 'https://indiankanoon.org/' } });
-    expect(off).toMatchObject({ ok: false, code: 'blocked' });
+    const allowed = await answering('#allow', () => mock.command('open', 's2', kanoon));
+    expect(allowed.reply.ok, JSON.stringify(allowed.reply)).toBe(true);
+    expect(allowed.reply.result).toMatchObject({ url: `${KANOON}/`, title: 'Indian Kanoon' });
+    // Allowed for this session only: the list is unchanged, and the session
+    // moves to a listed site without asking.
+    const listed = await sw.evaluate((k) => chrome.storage.local.get(k).then((d) => d[k]), STORAGE_KEYS.BRIDGE_SITES);
+    expect(listed).toEqual(['scconline.com']);
+    const toScc = await mock.command('tool', 's2', { name: 'navigate', input: { url: `${SCC}/` } });
+    expect(toScc.ok, JSON.stringify(toScc)).toBe(true);
+    expect(askPages()).toHaveLength(0);
+
+    // Another session asks again; closing the window is a no.
+    expect((await mock.command('open', 's3', { url: `${SCC}/`, allowed_hosts: ['scconline.com'] })).ok).toBe(true);
+    const closed = await answering(null, () =>
+      mock.command('tool', 's3', { name: 'navigate', input: { url: `${KANOON}/` } }),
+    );
+    expect(closed.reply).toMatchObject({ ok: false, code: 'declined' });
 
     const tool = await mock.command('tool', 's3', { name: 'screenshot', input: {} });
     expect(tool).toMatchObject({ ok: false, code: 'bad_request' });
   });
 
+  test('"Always allow" puts the site on the list, and Lexi tells the server', async () => {
+    const always = await answering('#always', () =>
+      mock.command('open', 's4', { url: `${KANOON}/`, allowed_hosts: ['indiankanoon.org'] }),
+    );
+    expect(always.reply.ok, JSON.stringify(always.reply)).toBe(true);
+    await expect
+      .poll(() => sw.evaluate((k) => chrome.storage.local.get(k).then((d) => d[k]), STORAGE_KEYS.BRIDGE_SITES))
+      .toEqual(['scconline.com', 'indiankanoon.org']);
+    await expect
+      .poll(() => mock.state.frames.filter((f) => f.type === 'sites').pop(), { timeout: 10000 })
+      .toMatchObject({ sites: ['scconline.com', 'indiankanoon.org'], any_site: true });
+
+    const again = await mock.command('open', 's5', { url: `${KANOON}/`, allowed_hosts: ['indiankanoon.org'] });
+    expect(again.ok, JSON.stringify(again)).toBe(true);
+    expect(askPages()).toHaveLength(0);
+    for (const session of ['s4', 's5']) await mock.command('close', session, {});
+  });
+
   test('close ends the session and closes its tab; later calls say no_session', async () => {
+    expect(await mock.command('close', 's2', {})).toMatchObject({ ok: true });
     const closed = await mock.command('close', 's3', {});
     expect(closed).toMatchObject({ ok: true, result: { closed: true } });
     await expect.poll(async () => (await sessionTabs()).length).toBe(1); // s1's tab is left
@@ -450,8 +509,8 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     expect(after).toMatchObject({ ok: false, code: 'no_session' });
   });
 
-  test('switching every site off closes the connection', async () => {
-    await setStorage({ [STORAGE_KEYS.BRIDGE_SITES]: [] });
+  test('switching it off closes the connection', async () => {
+    await setStorage({ [STORAGE_KEYS.BRIDGE_ENABLED]: false });
     await expect.poll(() => mock.state.closes.length, { timeout: 10000 }).toBe(1);
     expect(mock.state.closes[0]).toBe(1000);
     expect(mock.state.socket).toBeNull();
@@ -461,7 +520,7 @@ test.describe('browser bridge — real extension, mock Lexi backend', () => {
     const ticketsBefore = mock.state.ticketCalls.length;
     await setStorage({
       [STORAGE_KEYS.EXTENSION_TOKEN]: 'lexiext_revoked_000000000000000000000000000',
-      [STORAGE_KEYS.BRIDGE_SITES]: ['scconline.com'],
+      [STORAGE_KEYS.BRIDGE_ENABLED]: true,
     });
     await expect
       .poll(() => sw.evaluate((k) => chrome.storage.local.get(k).then((d) => d[k] || null), STORAGE_KEYS.EXTENSION_TOKEN), {

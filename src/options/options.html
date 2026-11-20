@@ -539,14 +539,25 @@
       <hr class="divider" />
 
       <div class="field-group" id="bridge-group">
-        <h3>Sites Lexi chat can use</h3>
-        <p class="muted small">
-          Let your Lexi chat look things up on these sites in this browser,
-          with your own subscription &mdash; for example, a judgment's SCC
-          citation with its page and paragraph. Lexi works in its own tab in
-          a &ldquo;Lexi&rdquo; tab group, only reads and searches, and never
-          signs in for you. Close that tab to stop it.
-        </p>
+        <h3>Lexi chat in this browser</h3>
+        <div class="field-row">
+          <div>
+            <label for="bridge-enabled">Let Lexi chat use this browser</label>
+            <p class="muted small">
+              Your Lexi chat can then use websites here with your own
+              sign-ins and subscriptions &mdash; for example, a judgment's
+              SCC citation with its page and paragraph. It works in its own
+              tab in a &ldquo;Lexi&rdquo; tab group; close that tab to stop
+              it. Chrome asks you before it uses a site that isn't listed
+              below, and before it submits, sends, pays for, uploads,
+              downloads or deletes anything. It never signs in for you.
+            </p>
+          </div>
+          <div class="field-row-actions">
+            <input type="checkbox" id="bridge-enabled" />
+          </div>
+        </div>
+        <p class="muted small">Sites it can use without asking:</p>
         <ul id="bridge-sites-list" class="site-grants-list"></ul>
         <p id="bridge-status" class="muted small" role="status"></p>
       </div>

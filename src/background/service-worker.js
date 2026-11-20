@@ -41,6 +41,7 @@ import {
 } from './cdp-driver.js';
 import { execute as executeTool } from './action-executor.js';
 import { createBridge } from './bridge-client.js';
+import { answerAsk } from './bridge-ask.js';
 
 // Read-only observability of the CDP attach state, for the acting-bar UI and
 // the e2e harness (which asserts the trusted-input path really attached and
@@ -457,13 +458,15 @@ async function withPageElementName(tabId, tool, input) {
 /**
  * Run one tool call on a tab behind the policy gate. Returns
  * {toolUseId, ok, result, error, code}; code is 'blocked' |
- * 'needs_confirmation' | 'tool_failed' when ok is false.
+ * 'needs_confirmation' | 'declined' | 'tool_failed' when ok is false.
  *
  * remote: the call comes from the browser bridge (Lexi's server-side chat),
- * not the side panel. Nobody is there to confirm, so anything short of
- * 'allow' is refused, and stored per-site grants are ignored.
+ * not the side panel. Stored per-site grants are ignored, and anything short
+ * of 'allow' runs only if `confirm({actionClass, tool, input, origin})` (the
+ * bridge asking the user in Chrome) resolves true; with no `confirm`, it is
+ * refused.
  */
-async function execTool(message, tabId, { remote = false } = {}) {
+async function execTool(message, tabId, { remote = false, confirm = null } = {}) {
   const { toolUseId } = message;
   // The tool name arrives under different keys depending on the caller:
   // agent-loop.js sends `name`, sidepanel.js's chat-mode loop sends
@@ -487,14 +490,38 @@ async function execTool(message, tabId, { remote = false } = {}) {
     return { toolUseId, ok: false, result: null, error: policy.reason, code: 'blocked' };
   }
 
+  // A remote call is confirmed here, by the user in Chrome, for this call only.
+  let confirmed = false;
   if (remote && policy.decision !== 'allow') {
-    return {
-      toolUseId,
-      ok: false,
-      result: null,
-      error: `"${actionClass}" needs the user's confirmation, which Lexi chat can't ask for — not executing.`,
-      code: 'needs_confirmation',
-    };
+    if (!confirm) {
+      return {
+        toolUseId,
+        ok: false,
+        result: null,
+        error: `"${actionClass}" needs the user's confirmation, which Lexi chat can't ask for — not executing.`,
+        code: 'needs_confirmation',
+      };
+    }
+    confirmed = (await confirm({ actionClass, tool, input, origin }).catch(() => false)) === true;
+    if (!confirmed) {
+      return {
+        toolUseId,
+        ok: false,
+        result: null,
+        error: `The user did not allow "${actionClass}" here — not executing.`,
+        code: 'declined',
+      };
+    }
+    // The page may have moved on while the user was deciding.
+    if ((await getTabOrigin(tabId).catch(() => null)) !== origin) {
+      return {
+        toolUseId,
+        ok: false,
+        result: null,
+        error: 'The page changed while the user was deciding — not executing. Read it again.',
+        code: 'tool_failed',
+      };
+    }
   }
 
   // A RISKY_CLASSES action MUST carry an explicit human grant (once/always),
@@ -502,7 +529,7 @@ async function execTool(message, tabId, { remote = false } = {}) {
   // If we can't see that grant (policy is still 'confirm'), refuse rather than
   // trusting the panel-side gate alone — so a buggy or compromised panel-side
   // classification can't slip an unconfirmed pay/delete/submit through.
-  if (RISKY_CLASSES.includes(actionClass) && policy.decision !== 'allow') {
+  if (RISKY_CLASSES.includes(actionClass) && policy.decision !== 'allow' && !confirmed) {
     return {
       toolUseId,
       ok: false,
@@ -555,8 +582,8 @@ async function announceControlMode(tabId) {
 }
 
 // ---------------------------------------------------------------------------
-// Browser bridge — Lexi's server-side chat driving a tab in this browser on
-// the sites the user switched on (bridge-client.js, docs/browser-bridge.md).
+// Browser bridge — Lexi's server-side chat driving a tab in this browser, on
+// the sites the user lets it use (bridge-client.js, docs/browser-bridge.md).
 // ---------------------------------------------------------------------------
 
 const bridge = createBridge({
@@ -826,6 +853,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!sender || sender.id !== chrome.runtime.id) return false;
+  if (message && message.type === MSG.BRIDGE_ASK_ANSWER) {
+    // Needs the sender (only the ask page in its own window may answer).
+    sendResponse({ ok: answerAsk(message.id, message.answer, sender) });
+    return false;
+  }
   const tabId = sender.tab && sender.tab.id;
   handleMessage(message, tabId)
     .then((response) => sendResponse(response))
@@ -938,20 +970,24 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   bridge.sync().catch(() => {});
 });
 
-// The bridge follows sign-in, the user's sites and the backend channel.
+// The bridge follows sign-in, its switch, the user's sites, the host access
+// it needs and the backend channel.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (
     changes[STORAGE_KEYS.EXTENSION_TOKEN] ||
     changes[STORAGE_KEYS.AUTH_MODE] ||
+    changes[STORAGE_KEYS.BRIDGE_ENABLED] ||
     changes[STORAGE_KEYS.BRIDGE_SITES] ||
     changes[LEXI_CHANNEL_CONFIG]
   ) {
     bridge.sync({ now: true }).catch(() => {});
   }
 });
-if (chrome.permissions && chrome.permissions.onRemoved) {
-  chrome.permissions.onRemoved.addListener(() => bridge.sync({ now: true }).catch(() => {}));
+if (chrome.permissions) {
+  for (const event of [chrome.permissions.onAdded, chrome.permissions.onRemoved]) {
+    if (event) event.addListener(() => bridge.sync({ now: true }).catch(() => {}));
+  }
 }
 bridge.sync().catch(() => {});
 

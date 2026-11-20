@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lexi chat is asking</title>
+<!-- The --lexi-* tokens come from the side panel's stylesheet. -->
+<link rel="stylesheet" href="../sidepanel/sidepanel.css" />
+<style>
+  body {
+    margin: 0;
+    padding: 20px;
+    background: var(--lexi-bg, #fff);
+    color: var(--lexi-text, #0f172a);
+    font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  p {
+    margin: 0 0 10px;
+  }
+  .muted {
+    color: var(--lexi-muted, #64748b);
+    font-size: 13px;
+  }
+  .quote {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--lexi-border, #e2e8f0);
+    border-radius: var(--lexi-r, 10px);
+    background: var(--lexi-surface, #f8fafc);
+    overflow-wrap: anywhere;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  button {
+    padding: 8px 14px;
+    border: 1px solid var(--lexi-border, #e2e8f0);
+    border-radius: var(--lexi-r, 10px);
+    background: var(--lexi-surface, #f8fafc);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.primary {
+    border-color: var(--lexi-accent, #045b6c);
+    background: var(--lexi-accent, #045b6c);
+    color: #fff;
+  }
+  [hidden] {
+    display: none !important;
+  }
+</style>
+</head>
+<body>
+  <h1 id="question"></h1>
+  <p id="element" class="quote" hidden></p>
+  <p id="typed" class="quote" hidden></p>
+  <p id="about" class="muted"></p>
+  <div class="actions">
+    <button type="button" id="allow" class="primary">Allow</button>
+    <button type="button" id="always" hidden>Always allow</button>
+    <button type="button" id="deny">Don’t allow</button>
+  </div>
+  <script type="module" src="ask.js"></script>
+</body>
+</html>

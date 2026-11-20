@@ -16,9 +16,10 @@ import {
   AGENT_MODE_AVAILABLE,
   LEXI_CHANNEL_CONFIG,
   BRIDGE_SITE_PRESETS,
+  BRIDGE_HOST_ACCESS,
 } from '../config.js';
 import { getActiveConfig } from '../background/channel-config.js';
-import { siteOriginPatterns } from '../background/bridge-client.js';
+import { isAllowedHost } from '../agent/host-scope.js';
 import { nanoAvailability } from '../agent/gemini-nano.js';
 
 const ALL_STORAGE_KEYS = Object.values(STORAGE_KEYS);
@@ -45,6 +46,7 @@ const nanoNote = $('nano-tier-note');
 const nanoDownloadBtn = $('nano-download-btn');
 const siteGrantsList = $('site-grants-list');
 const siteGrantsEmpty = $('site-grants-empty');
+const bridgeEnabledToggle = $('bridge-enabled');
 const bridgeSitesList = $('bridge-sites-list');
 const bridgeStatus = $('bridge-status');
 
@@ -62,6 +64,11 @@ async function init() {
   await refreshAccount();
   await refreshNanoRow();
   if (AGENT_MODE_AVAILABLE) {
+    bridgeEnabledToggle.addEventListener('change', onBridgeEnabledToggle);
+    // "Always allow" in Chrome's ask window adds a site while this page is open.
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[STORAGE_KEYS.BRIDGE_SITES]) renderBridgeSites();
+    });
     await renderBridgeSites();
     setInterval(refreshBridgeStatus, BRIDGE_STATUS_POLL_MS);
   }
@@ -365,84 +372,110 @@ function toOriginPattern(origin) {
 }
 
 // ---------------------------------------------------------------------------
-// Sites Lexi chat can use (the browser bridge). Switching a site on asks
-// Chrome for host access to it and adds its hosts to BRIDGE_SITES; the
-// service worker connects to Lexi while the user is signed in and at least
-// one site is on.
+// Lexi chat in this browser (the browser bridge). The switch asks Chrome for
+// host access to every site (BRIDGE_HOST_ACCESS) and sets BRIDGE_ENABLED; the
+// service worker connects to Lexi while the user is signed in and it is on.
+// BRIDGE_SITES are the sites chat may use without asking: the presets the
+// user ticks here and the sites they "Always allow" in Chrome's ask window.
 // ---------------------------------------------------------------------------
-function presetOrigins(preset) {
-  return preset.hosts.flatMap(siteOriginPatterns);
-}
-
 async function readBridgeSites() {
   const stored = await chrome.storage.local.get(STORAGE_KEYS.BRIDGE_SITES);
   return stored[STORAGE_KEYS.BRIDGE_SITES] || [];
 }
 
-async function isPresetOn(preset, sites) {
-  if (!preset.hosts.every((host) => sites.includes(host))) return false;
-  return chrome.permissions.contains({ origins: presetOrigins(preset) }).catch(() => false);
+async function writeBridgeSites(sites) {
+  await chrome.storage.local.set({ [STORAGE_KEYS.BRIDGE_SITES]: [...new Set(sites)] });
+}
+
+async function isBridgeOn() {
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.BRIDGE_ENABLED);
+  if (!stored[STORAGE_KEYS.BRIDGE_ENABLED]) return false;
+  return chrome.permissions.contains(BRIDGE_HOST_ACCESS).catch(() => false);
+}
+
+function siteRow(id, name, detail, control) {
+  const li = document.createElement('li');
+  const label = document.createElement('label');
+  if (id) label.htmlFor = id;
+  label.textContent = name;
+  const text = document.createElement('div');
+  text.appendChild(label);
+  if (detail) {
+    const hosts = document.createElement('span');
+    hosts.className = 'site-origin muted';
+    hosts.textContent = detail;
+    text.appendChild(document.createElement('br'));
+    text.appendChild(hosts);
+  }
+  li.appendChild(text);
+  li.appendChild(control);
+  return li;
 }
 
 async function renderBridgeSites() {
+  bridgeEnabledToggle.checked = await isBridgeOn();
   const sites = await readBridgeSites();
   bridgeSitesList.innerHTML = '';
   for (const preset of BRIDGE_SITE_PRESETS) {
-    const li = document.createElement('li');
-
-    const label = document.createElement('label');
-    label.htmlFor = `bridge-site-${preset.id}`;
-    label.textContent = preset.label;
-
-    const hosts = document.createElement('span');
-    hosts.className = 'site-origin muted';
-    hosts.textContent = preset.hosts.join(', ');
-
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.id = `bridge-site-${preset.id}`;
-    toggle.checked = await isPresetOn(preset, sites);
-    toggle.addEventListener('change', () => onBridgeSiteToggle(preset, toggle));
-
-    const text = document.createElement('div');
-    text.appendChild(label);
-    text.appendChild(document.createElement('br'));
-    text.appendChild(hosts);
-    li.appendChild(text);
-    li.appendChild(toggle);
-    bridgeSitesList.appendChild(li);
+    toggle.checked = preset.hosts.every((host) => sites.includes(host));
+    toggle.addEventListener('change', () => onBridgePresetToggle(preset, toggle));
+    bridgeSitesList.appendChild(siteRow(toggle.id, preset.label, preset.hosts.join(', '), toggle));
+  }
+  const presetHosts = BRIDGE_SITE_PRESETS.flatMap((preset) => preset.hosts);
+  for (const host of sites.filter((h) => !isAllowedHost(h, presetHosts))) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-muted btn-small';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${host}`);
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      await writeBridgeSites((await readBridgeSites()).filter((h) => h !== host));
+      await renderBridgeSites();
+    });
+    bridgeSitesList.appendChild(siteRow(null, host, '', remove));
   }
   await refreshBridgeStatus();
 }
 
-async function onBridgeSiteToggle(preset, toggle) {
-  toggle.disabled = true;
+async function onBridgeEnabledToggle() {
+  bridgeEnabledToggle.disabled = true;
   try {
-    if (toggle.checked) {
+    if (bridgeEnabledToggle.checked) {
       // Ask first, while the click's user gesture is still live.
-      const granted = await chrome.permissions.request({ origins: presetOrigins(preset) }).catch(() => false);
+      const granted = await chrome.permissions.request(BRIDGE_HOST_ACCESS).catch(() => false);
       if (!granted) {
-        toggle.checked = false;
+        bridgeEnabledToggle.checked = false;
         return;
       }
-      const sites = await readBridgeSites();
-      const next = [...new Set([...sites, ...preset.hosts])];
-      await chrome.storage.local.set({ [STORAGE_KEYS.BRIDGE_SITES]: next });
-    } else {
-      const sites = await readBridgeSites();
-      const next = sites.filter((host) => !preset.hosts.includes(host));
-      await chrome.storage.local.set({ [STORAGE_KEYS.BRIDGE_SITES]: next });
-      await chrome.permissions.remove({ origins: presetOrigins(preset) }).catch(() => {});
     }
+    // Switching off keeps the host access: Agent Mode's own site grants may
+    // rest on it, and the bridge stays off while the switch is.
+    await chrome.storage.local.set({ [STORAGE_KEYS.BRIDGE_ENABLED]: bridgeEnabledToggle.checked });
+  } finally {
+    bridgeEnabledToggle.disabled = false;
+    await refreshBridgeStatus();
+  }
+}
+
+async function onBridgePresetToggle(preset, toggle) {
+  toggle.disabled = true;
+  try {
+    const sites = await readBridgeSites();
+    await writeBridgeSites(
+      toggle.checked ? [...sites, ...preset.hosts] : sites.filter((host) => !preset.hosts.includes(host)),
+    );
   } finally {
     toggle.disabled = false;
-    await refreshBridgeStatus();
   }
 }
 
 async function refreshBridgeStatus() {
   if (!bridgeStatus) return;
-  const stored = await chrome.storage.local.get([STORAGE_KEYS.EXTENSION_TOKEN, STORAGE_KEYS.BRIDGE_SITES]);
+  const stored = await chrome.storage.local.get(STORAGE_KEYS.EXTENSION_TOKEN);
   let status = null;
   try {
     status = await chrome.runtime.sendMessage({ type: MSG.GET_BRIDGE_STATUS });
@@ -450,11 +483,11 @@ async function refreshBridgeStatus() {
     status = null;
   }
   if (!stored[STORAGE_KEYS.EXTENSION_TOKEN]) {
-    bridgeStatus.textContent = 'Sign in to let Lexi chat use these sites.';
-  } else if (!(stored[STORAGE_KEYS.BRIDGE_SITES] || []).length) {
-    bridgeStatus.textContent = 'Off. Switch on a site to let Lexi chat use it in this browser.';
+    bridgeStatus.textContent = 'Sign in to let Lexi chat use this browser.';
+  } else if (!(await isBridgeOn())) {
+    bridgeStatus.textContent = 'Off.';
   } else if (status && status.connected) {
-    bridgeStatus.textContent = 'Connected. Lexi chat can use the sites switched on above.';
+    bridgeStatus.textContent = 'Connected. Lexi chat can use this browser.';
   } else {
     const why = status && status.error ? ` ${status.error}` : '';
     bridgeStatus.textContent = `Connecting to Lexi…${why}`;

@@ -2,14 +2,17 @@
 //
 // The extension end of the browser bridge: a WebSocket from this service
 // worker to Lexi's backend, over which Lexi's server-side chat drives a tab in
-// this browser on the sites the user switched on (Options → "Sites Lexi chat
-// can use"). Wire protocol: docs/browser-bridge.md.
+// this browser once the user lets it (Options → "Lexi chat in this browser").
+// Wire protocol: docs/browser-bridge.md.
 //
-// Every tool call runs through the service worker's execTool in remote mode:
-// the denylist, sensitive-field blocks and the session's run scope apply,
-// stored Agent Mode grants don't, and anything that needs a confirmation is
-// refused (chat can't show the confirm card). A session's tab is a background
-// tab in a "Lexi" tab group with the red acting border.
+// Chat may use any site, but a session only acts on the sites the user lets
+// it: those on their list (Options), and others they allow when Chrome asks
+// (bridge-ask.js) as the session opens a site, navigates to one, or finds its
+// tab on one after a link. Every tool call runs through the service worker's
+// execTool in remote mode: the denylist, sensitive-field blocks and the
+// session's run scope apply, stored Agent Mode grants don't, and anything
+// Agent Mode would confirm is asked in Chrome too. A session's tab is a
+// background tab in a "Lexi" tab group with the red acting border.
 //
 // ES module. createBridge() takes the service-worker helpers it needs, so this
 // file has no import cycle with service-worker.js.
@@ -25,10 +28,12 @@ import {
   BRIDGE_OPEN_TIMEOUT_MS,
   BRIDGE_TOOLS,
   BRIDGE_SESSIONS_KEY,
+  BRIDGE_HOST_ACCESS,
 } from '../config.js';
 import { normalizeAllowedHosts, httpHostOf, isAllowedHost } from '../agent/host-scope.js';
 import { getActiveConfig } from './channel-config.js';
 import { isDenylisted } from './permission-manager.js';
+import { ask } from './bridge-ask.js';
 
 const TAB_GROUP_TITLE = 'Lexi';
 // A session the server stops using (a crashed turn never sends `close`) gives
@@ -46,21 +51,36 @@ class BridgeError extends Error {
   }
 }
 
-/** Host-permission patterns for a site and its subdomains. */
-export function siteOriginPatterns(host) {
-  return [`https://${host}/*`, `https://*.${host}/*`];
+/** Whether the user lets Lexi chat use this browser: the switch is on and
+ * Chrome still grants the host access it asked for. */
+export async function bridgeAllowed() {
+  const data = await chrome.storage.local.get(STORAGE_KEYS.BRIDGE_ENABLED);
+  if (!data[STORAGE_KEYS.BRIDGE_ENABLED]) return false;
+  return chrome.permissions.contains(BRIDGE_HOST_ACCESS).catch(() => false);
 }
 
-/** The user's bridge sites whose host permission is still granted. */
-export async function grantedSites() {
+/** The hosts Lexi chat may use without asking. */
+export async function trustedSites() {
   const data = await chrome.storage.local.get(STORAGE_KEYS.BRIDGE_SITES);
-  const sites = normalizeAllowedHosts(data[STORAGE_KEYS.BRIDGE_SITES] || []);
-  const granted = [];
-  for (const host of sites) {
-    const ok = await chrome.permissions.contains({ origins: siteOriginPatterns(host) }).catch(() => false);
-    if (ok) granted.push(host);
+  return normalizeAllowedHosts(data[STORAGE_KEYS.BRIDGE_SITES] || []);
+}
+
+async function trustSites(hosts) {
+  const sites = await trustedSites();
+  await chrome.storage.local.set({ [STORAGE_KEYS.BRIDGE_SITES]: [...new Set([...sites, ...hosts])] });
+}
+
+/** "www.example.com" -> "example.com": a site covers its subdomains. */
+function bareHost(host) {
+  return String(host || '').replace(/^www\./, '');
+}
+
+function hostOfOrigin(origin) {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return '';
   }
-  return granted;
 }
 
 async function accountToken() {
@@ -185,7 +205,7 @@ export function createBridge({ execTool, setRunScope, startControl, endControl, 
 
   /**
    * Bring the socket in line with the current state: connected while the user
-   * is signed in and has at least one site switched on, closed otherwise.
+   * is signed in and lets Lexi chat use this browser, closed otherwise.
    * `now` skips a pending reconnect delay (the user just changed something).
    */
   function sync({ now = false } = {}) {
@@ -196,18 +216,18 @@ export function createBridge({ execTool, setRunScope, startControl, endControl, 
   async function doSync(now) {
     await sweepIdleSessions();
     const token = AGENT_MODE_AVAILABLE ? await accountToken() : null;
-    const sites = token ? await grantedSites() : [];
-    if (!token || !sites.length) {
+    if (!token || !(await bridgeAllowed())) {
       closeSocket();
       await endAllSessions();
       lastError = null;
       return;
     }
+    const sites = await trustedSites();
     const { api_base: apiBase } = await getActiveConfig();
     if (ws && wsApiBase !== apiBase) closeSocket(); // the backend channel flipped
     if (ws) {
       if (ws.readyState === WebSocket.OPEN && sites.join(',') !== sentSites.join(',')) {
-        if (send({ type: 'sites', sites })) sentSites = sites;
+        if (send({ type: 'sites', sites, any_site: true })) sentSites = sites;
       }
       return;
     }
@@ -253,7 +273,13 @@ export function createBridge({ execTool, setRunScope, startControl, endControl, 
       attempt = 0;
       lastError = null;
       sentSites = sites;
-      send({ type: 'hello', protocol: BRIDGE_PROTOCOL, extension_version: chrome.runtime.getManifest().version, sites });
+      send({
+        type: 'hello',
+        protocol: BRIDGE_PROTOCOL,
+        extension_version: chrome.runtime.getManifest().version,
+        sites,
+        any_site: true,
+      });
       pingTimer = setInterval(() => {
         send({ type: 'ping' });
         sweepIdleSessions().catch(() => {});
@@ -344,45 +370,76 @@ export function createBridge({ execTool, setRunScope, startControl, endControl, 
     }
   }
 
+  /**
+   * Let session `s` use `hosts`: those on the user's list or already allowed
+   * for it pass, Chrome asks about the rest (several at once: one site's
+   * hosts). Adds them to its scope; a no throws `declined`.
+   */
+  async function allowHosts(s, hosts) {
+    const blocked = hosts.find((host) => isDenylisted(`https://${host}`));
+    if (blocked) throw new BridgeError('blocked', `${blocked} is on Lexi's denylist.`);
+    const trusted = await trustedSites();
+    const asking = hosts.filter((host) => !isAllowedHost(host, trusted) && !isAllowedHost(host, s.allowedHosts));
+    if (asking.length) {
+      const answer = await ask({ kind: 'site', hosts: asking });
+      if (answer === 'no') {
+        throw new BridgeError('declined', `The user did not let Lexi chat use ${asking.join(', ')}.`);
+      }
+      if (answer === 'always') await trustSites(asking);
+    }
+    s.allowedHosts = normalizeAllowedHosts([...(s.allowedHosts || []), ...hosts]);
+  }
+
+  /** execTool's confirm hook: ask the user about one action that needs it. */
+  async function confirmAction({ actionClass, tool, input, origin }) {
+    const answer = await ask({
+      kind: 'action',
+      host: bareHost(hostOfOrigin(origin)),
+      action: actionClass,
+      element: (input && input.elementName) || '',
+      text: tool === 'type_text' ? (input && input.text) || '' : '',
+    });
+    return answer !== 'no';
+  }
+
   async function openSession(sessionId, { url, allowed_hosts: allowedHosts }) {
     let target;
     try {
       target = new URL(String(url || ''));
     } catch {
-      throw new BridgeError('bad_request', 'open needs an absolute https URL.');
+      throw new BridgeError('bad_request', 'open needs an absolute http(s) URL.');
     }
-    if (target.protocol !== 'https:') throw new BridgeError('bad_request', 'open needs an absolute https URL.');
-    const sites = await grantedSites();
-    const scope = normalizeAllowedHosts(allowedHosts).filter((host) => isAllowedHost(host, sites));
     const host = httpHostOf(target.href);
+    if (!host) throw new BridgeError('bad_request', 'open needs an absolute http(s) URL.');
+    const wanted = normalizeAllowedHosts(allowedHosts).map(bareHost);
+    const scope = wanted.length ? wanted : [bareHost(host)];
     if (!isAllowedHost(host, scope)) {
-      throw new BridgeError(
-        'site_not_enabled',
-        `${host} is not one of the sites this browser lets Lexi chat use (${sites.join(', ') || 'none'}).`,
-      );
+      throw new BridgeError('bad_request', `${host} is not one of allowed_hosts (${scope.join(', ')}).`);
     }
-    if (isDenylisted(target.origin)) throw new BridgeError('blocked', `${host} is on Lexi's denylist.`);
 
     await loadSessions();
     const existing = sessions.get(sessionId);
-    let tabId = existing && (await tabExists(existing.tabId)) ? existing.tabId : null;
-    if (tabId !== null) {
-      sessions.set(sessionId, { tabId, allowedHosts: scope, lastUsed: Date.now() });
+    const live = !!existing && (await tabExists(existing.tabId));
+    const s = live ? existing : { tabId: null, allowedHosts: [] };
+    await allowHosts(s, scope);
+    s.lastUsed = Date.now();
+    if (live) {
+      sessions.set(sessionId, s);
       await saveSessions();
-      await setRunScope(tabId, scope);
-      const res = await execTool({ tool: 'navigate', input: { url: target.href } }, tabId, { remote: true });
+      await setRunScope(s.tabId, s.allowedHosts);
+      const res = await execTool({ tool: 'navigate', input: { url: target.href } }, s.tabId, { remote: true });
       if (!res.ok) throw new BridgeError(res.code || 'tool_failed', res.error || 'Navigation failed.');
     } else {
       const tab = await chrome.tabs.create({ url: target.href, active: false });
-      tabId = tab.id;
-      sessions.set(sessionId, { tabId, allowedHosts: scope, lastUsed: Date.now() });
+      s.tabId = tab.id;
+      sessions.set(sessionId, s);
       await saveSessions();
-      await setRunScope(tabId, scope);
-      await addToLexiGroup(tabId);
-      await waitForLoad(tabId, BRIDGE_OPEN_TIMEOUT_MS);
+      await setRunScope(s.tabId, s.allowedHosts);
+      await addToLexiGroup(s.tabId);
+      await waitForLoad(s.tabId, BRIDGE_OPEN_TIMEOUT_MS);
     }
-    await startControl(tabId).catch(() => {});
-    return pageOf(tabId);
+    await startControl(s.tabId).catch(() => {});
+    return pageOf(s.tabId);
   }
 
   async function sessionTab(sessionId) {
@@ -401,14 +458,23 @@ export function createBridge({ execTool, setRunScope, startControl, endControl, 
   async function runTool(sessionId, { name, input }, commandId) {
     if (!BRIDGE_TOOLS.includes(name)) throw new BridgeError('bad_request', `Unknown tool: ${name}`);
     const s = await sessionTab(sessionId);
+    const args = cleanInput(input);
+    // Where a navigate goes, and the page the tab is on now (a link may have
+    // led off the session's sites), must be sites the user lets it use.
+    let host = null;
+    if (name === 'navigate') host = httpHostOf(String(args.url || ''));
+    else if (name !== 'go_back') host = httpHostOf((await pageOf(s.tabId).catch(() => ({}))).url || '');
+    if (host && !isAllowedHost(host, s.allowedHosts)) {
+      await allowHosts(s, [bareHost(host)]);
+      await saveSessions();
+    }
     // Re-assert the session's scope: a side panel closing on this tab clears
     // whatever scope the tab had.
     await setRunScope(s.tabId, s.allowedHosts);
-    const res = await execTool(
-      { tool: name, input: cleanInput(input), toolUseId: `bridge:${commandId}` },
-      s.tabId,
-      { remote: true },
-    );
+    const res = await execTool({ tool: name, input: args, toolUseId: `bridge:${commandId}` }, s.tabId, {
+      remote: true,
+      confirm: confirmAction,
+    });
     if (!res.ok) throw new BridgeError(res.code || 'tool_failed', res.error || `${name} failed.`);
     const result = res.result && typeof res.result === 'object' && !Array.isArray(res.result) ? res.result : { value: res.result };
     return { ...result, page: await pageOf(s.tabId).catch(() => null) };
